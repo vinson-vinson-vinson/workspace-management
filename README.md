@@ -1,5 +1,8 @@
 # workspace-management
 
+> **macOS only** (for now). The scripts rely on BSD `sed`, `open`, the `code`
+> CLI, and Laravel Valet. Linux support isn't there yet.
+
 Bash tooling for spinning up **isolated, per-task development workspaces** out of
 git worktrees, opening them in VS Code, and (optionally) serving each one under
 its own local subdomain — so you can have several tasks in flight at once without
@@ -35,7 +38,7 @@ adapts to your own repos, branches, domain, and app layout.
 
 ## Requirements
 
-- **macOS** — the scripts use BSD `sed` (`sed -i ''`), `open`, and the `code` CLI.
+- **macOS** — required for now; the scripts use BSD `sed` (`sed -i ''`), `open`, and the `code` CLI.
 - **git** with worktree support.
 - **VS Code** with the `code` command on your `PATH` (for `create-workspace.sh`).
 - For `serve-workspace.sh` only: **Laravel Valet** (nginx + a wildcard cert for

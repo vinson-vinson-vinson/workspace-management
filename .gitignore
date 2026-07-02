@@ -1,0 +1,8 @@
+# Local, machine-specific configuration (copy config.example.sh -> config.sh)
+config.sh
+
+# Generated VS Code workspace files
+*.code-workspace
+
+# Claude Code local settings
+.claude/

@@ -46,8 +46,8 @@ OPEN_CLAUDE_DEFAULT=true
 # can leave this section at its defaults.
 
 # Task workspaces are served at <sub>.$BASE_DOMAIN (sub is the lowercased task
-# id, e.g. cu-1234.anny.dev). The main workspace is served at $BASE_DOMAIN.
-BASE_DOMAIN="anny.dev"
+# id, e.g. cu-1234.anny.test). The main workspace is served at $BASE_DOMAIN.
+BASE_DOMAIN="anny.test"
 
 # Landing path shown by list-workspaces for each served workspace.
 ADMIN_PATH="/admin/calendar"

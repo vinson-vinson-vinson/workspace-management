@@ -22,7 +22,15 @@ set -euo pipefail
 # -----------------------------------------------------------------------------
 
 # Load configuration (see config.example.sh). WSM_CONFIG can point elsewhere.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve this script's real dir following symlinks, so it still finds config.sh
+# when symlinked onto your PATH (see install.sh).
+_src="${BASH_SOURCE[0]}"
+while [[ -h "$_src" ]]; do
+  _dir="$(cd -P "$(dirname "$_src")" && pwd)"
+  _src="$(readlink "$_src")"
+  [[ "$_src" != /* ]] && _src="$_dir/$_src"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$_src")" && pwd)"
 CONFIG_FILE="${WSM_CONFIG:-$SCRIPT_DIR/config.sh}"
 if [[ ! -f "$CONFIG_FILE" ]]; then
   printf 'ERROR: config file not found: %s\n' "$CONFIG_FILE" >&2

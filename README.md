@@ -57,9 +57,16 @@ cd workspace-management
 cp config.example.sh config.sh
 $EDITOR config.sh
 
-# (optional) put the scripts on your PATH
-ln -s "$PWD"/*.sh ~/bin/    # or add this dir to PATH
+# (optional) install the commands onto your PATH by bare name:
+#   create-workspace  remove-workspace  list-workspaces  serve-workspace
+./install.sh                 # symlinks into ~/.local/bin (override: ./install.sh ~/bin)
 ```
+
+The scripts are committed with the executable bit set, so a fresh clone can run
+them directly (`./list-workspaces.sh`) with no `chmod` needed. `install.sh` just
+symlinks them (minus the `.sh`) into a bin directory so you can call them from
+anywhere; the symlinks point back at the checkout, so `git pull` updates the
+commands in place.
 
 `config.sh` is gitignored, so your local paths never get committed. Every script
 sources it. To keep the config somewhere else, point `WSM_CONFIG` at it:

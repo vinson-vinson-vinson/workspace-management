@@ -28,7 +28,7 @@ DRY_RUN=false
 REMOVE_MODE=false
 TASK_INPUT=""
 FEATURE_NAME=""
-OPEN_CLAUDE="${OPEN_CLAUDE_DEFAULT:-true}"
+OPEN_CLAUDE="${OPEN_CLAUDE_DEFAULT:-false}"
 CLAUDE_PROMPT=""
 
 print_usage() {
@@ -41,23 +41,24 @@ Rules:
   - With task: CU-<taskId>_<feature-name> -> branch/slug => CU-<taskId>_<feature-name>
   - Without task: <feature-name> -> branch/slug => <feature-name>
   - With --remove: remove session worktrees, local branches, and workspace file.
-  - By default the VS Code workspace opens AND a Claude Code session is started
-    in the Claude desktop app rooted at the new session dir. Use --no-claude to
-    skip opening the Claude desktop app.
+  - The VS Code workspace opens automatically. Opening a Claude Code session in
+    the Claude desktop app is opt-in: pass --claude (or set OPEN_CLAUDE_DEFAULT
+    in config.sh).
 
 Options:
   --dry-run            Print actions without executing them.
   --remove             Remove the session instead of creating it.
-  --no-claude          Do not open the Claude desktop app for the session.
-  --prompt <text>      Prefill the Claude Code session with this prompt.
+  --claude             Also open a Claude Code session in the Claude desktop app.
+  --no-claude          Do not open the Claude desktop app (default).
+  --prompt <text>      Prefill the Claude Code session with this prompt (implies --claude).
 
 Examples:
   create-workspace.sh CU-1234_Test-Project
   create-workspace.sh MeinNeuesProjekt
   create-workspace.sh CU-1234_Test-Project --dry-run
   create-workspace.sh CU-1234_Test-Project --remove
-  create-workspace.sh CU-1234_Test-Project --no-claude
-  create-workspace.sh CU-1234_Test-Project --prompt "Implement the task"
+  create-workspace.sh CU-1234_Test-Project --claude
+  create-workspace.sh CU-1234_Test-Project --claude --prompt "Implement the task"
 USAGE
 }
 
@@ -126,6 +127,10 @@ parse_args() {
         REMOVE_MODE=true
         shift
         ;;
+      --claude)
+        OPEN_CLAUDE=true
+        shift
+        ;;
       --no-claude)
         OPEN_CLAUDE=false
         shift
@@ -136,6 +141,7 @@ parse_args() {
           exit 1
         fi
         CLAUDE_PROMPT="$2"
+        OPEN_CLAUDE=true   # a prompt only makes sense with a Claude session
         shift 2
         ;;
       -h|--help)

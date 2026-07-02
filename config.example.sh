@@ -36,9 +36,10 @@ BACKEND_BASE_BRANCH="main"
 # by the serve/remove safety checks. Case-insensitive.
 TASK_ID_PREFIX="CU"
 
-# By default create-workspace opens a Claude Code session (Claude desktop app)
-# rooted at the new session dir. Set to false to make --no-claude the default.
-OPEN_CLAUDE_DEFAULT=true
+# Whether create-workspace also opens a Claude Code session (Claude desktop app)
+# rooted at the new session dir. Off by default; --claude enables it per-run.
+# Set to true here if you want a Claude session opened for every workspace.
+OPEN_CLAUDE_DEFAULT=false
 
 # --------------------------- serving (serve-workspace) -----------------------
 # serve-workspace makes a task worktree reachable at <sub>.$BASE_DOMAIN using

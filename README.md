@@ -31,7 +31,7 @@ adapts to your own repos, branches, domain, and app layout.
 
 | Script | What it does |
 | --- | --- |
-| `create-workspace.sh` | Create (or reopen) a workspace: adds the two worktrees, writes a `.code-workspace` file, opens VS Code, and optionally launches a Claude Code session. Also `--remove`. |
+| `create-workspace.sh` | Create (or reopen) a workspace: adds the two worktrees, writes a `.code-workspace` file, and opens VS Code. Optionally opens a Claude Code session with `--claude`. Also `--remove`. |
 | `remove-workspace.sh` | Tear a workspace down safely: reverts routing, removes worktrees, deletes local branches, and cleans the session dir. Refuses to run on unpushed work unless `--force`. |
 | `list-workspaces.sh` | List all current workspaces, star the one you're in, and link each served workspace to its landing URL. |
 | `serve-workspace.sh` | Make a task workspace reachable at `<sub>.<domain>` via Valet/nginx: copies + rewrites envs, writes an nginx block, and wires up dependencies. |
@@ -44,8 +44,8 @@ adapts to your own repos, branches, domain, and app layout.
 - For `serve-workspace.sh` only: **Laravel Valet** (nginx + a wildcard cert for
   your domain), `nginx`, and `sudo` access to reload nginx. If you don't serve
   workspaces you can ignore this script entirely.
-- Optional: the **Claude** desktop app, for the `claude://` deep-link session
-  that `create-workspace.sh` opens by default.
+- Optional: the **Claude** desktop app, for the opt-in `claude://` deep-link
+  session that `create-workspace.sh --claude` opens.
 
 ## Setup
 
@@ -106,11 +106,11 @@ prefix (e.g. `JIRA`, `ENG`) or keep `CU`.
 ## Usage
 
 ```bash
-# Create a task workspace (adds worktrees, opens VS Code + a Claude session)
+# Create a task workspace (adds worktrees, opens VS Code)
 ./create-workspace.sh CU-1234_my-feature
 
-# Create a plain workspace, skip Claude, preview only
-./create-workspace.sh my-feature --no-claude
+# Also open a Claude Code session (opt-in); or just preview
+./create-workspace.sh CU-1234_my-feature --claude
 ./create-workspace.sh CU-1234_my-feature --dry-run
 
 # List everything (the workspace you're in is starred)

@@ -128,22 +128,72 @@ cmd_list() {
     exit 0
   fi
 
-  # Main workspace: the root repos, always served at $BASE_DOMAIN.
-  local m main_label sw
-  main_label="$(_ws_main_label)"
-  [[ "$current_key" == "MAIN" ]] && m='* ' || m='  '
-  sw="$(_ws_swatch "$(_ws_color MAIN)")"; [[ -n "$sw" ]] && sw+=' '
-  printf '%s%sMAIN %s  %s\n' "$m" "$sw" "$main_label" "$(_ws_link "${BASE_DOMAIN}${ADMIN_PATH}")"
+  # ---- build rows: col1 = color swatch / MAIN tag, col2 = name, col3 = link --
+  local -a r_key=() r_name=() r_badge_plain=() r_badge=() r_link=()
 
-  local url
+  # MAIN first — identified by a MAIN tag (not a color), always served.
+  r_key+=("MAIN")
+  r_name+=("$(_ws_main_label)")
+  r_badge_plain+=("MAIN")
+  r_badge+=("${C_BOLD}${C_CYAN}MAIN${C_RESET}")
+  r_link+=("${BASE_DOMAIN}${ADMIN_PATH}")
+
+  local slug sw badge
   for slug in ${slugs[@]+"${slugs[@]}"}; do
-    [[ "$current_key" == "$slug" ]] && m='* ' || m='  '
-    url="$(_ws_admin_url "$slug")"
-    sw="$(_ws_swatch "$(_ws_color "$slug")")"; [[ -n "$sw" ]] && sw+=' '
-    if [[ -n "$url" ]]; then
-      printf '%s%s%s  %s\n' "$m" "$sw" "$slug" "$(_ws_link "$url")"
+    r_key+=("$slug")
+    r_name+=("$slug")
+    sw="$(_ws_swatch "$(_ws_color "$slug")")"
+    if [[ -n "$sw" ]]; then badge="$sw"; else badge="${C_DIM}●${C_RESET}"; fi
+    r_badge_plain+=("●")
+    r_badge+=("$badge")
+    r_link+=("$(_ws_admin_url "$slug")")
+  done
+
+  # Column widths from PLAIN text so ANSI / hyperlink codes don't skew alignment.
+  # Long names are capped with an ellipsis so the table stays compact.
+  local name_cap=50
+  local i len maxbadge=0 maxname=9      # 9 = len("WORKSPACE")
+  for i in "${!r_key[@]}"; do
+    len=${#r_badge_plain[$i]}; (( len > maxbadge )) && maxbadge=$len
+    len=${#r_name[$i]}; (( len > name_cap )) && len=$name_cap
+    (( len > maxname )) && maxname=$len
+  done
+
+  # Header (col1 is the marker/color column, left unlabeled).
+  printf '%*s  %s%-*s  %s%s\n' \
+    $((2 + maxbadge)) "" \
+    "$C_DIM" "$maxname" "WORKSPACE" "SERVE URL" "$C_RESET"
+
+  # Rows: leading '*' marks the workspace containing the cwd. col2 is padded by
+  # hand (not %-*s) because a truncated name carries a multi-byte ellipsis whose
+  # byte length would otherwise throw the alignment off.
+  local curc bpad link name dw pad
+  for i in "${!r_key[@]}"; do
+    if [[ "$current_key" == "${r_key[$i]}" ]]; then
+      curc="${C_BOLD}*${C_RESET}"
     else
-      printf '%s%s%s\n' "$m" "$sw" "$slug"
+      curc=' '
     fi
+    bpad=$(( maxbadge - ${#r_badge_plain[$i]} ))
+
+    name="${r_name[$i]}"
+    if (( ${#name} > maxname )); then
+      name="${name:0:maxname-1}…"   # display width == maxname
+      dw=$maxname
+    else
+      dw=${#name}
+    fi
+    pad=$(( maxname - dw ))
+
+    if [[ -n "${r_link[$i]}" ]]; then
+      link="$(_ws_link "${r_link[$i]}")"
+    else
+      link="${C_DIM}—${C_RESET}"
+    fi
+
+    printf '%s %s%*s  %s%*s  %s\n' \
+      "$curc" "${r_badge[$i]}" "$bpad" "" \
+      "$name" "$pad" "" \
+      "$link"
   done
 }

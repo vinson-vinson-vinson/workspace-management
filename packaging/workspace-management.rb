@@ -13,7 +13,7 @@ class WorkspaceManagement < Formula
   url "https://github.com/vinson-vinson-vinson/workspace-management.git",
       using:    :git,
       tag:      "v0.1.0",
-      revision: "REPLACE_WITH_FULL_40_CHAR_COMMIT_SHA"
+      revision: "14971d9eed4960b507575f486f8dda5934a21108"
   version "0.1.0"
   license "MIT"
 

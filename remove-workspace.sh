@@ -47,7 +47,8 @@ Options:
   -h, --help    Show this help.
 
 Safety:
-  - Only removes workspaces with a CU- prefix. Refuses to touch main worktrees.
+  - Works for any workspace name, but refuses to remove a worktree that is on a
+    protected base branch (main/master or your configured base branch).
   - Checks for uncommitted changes and unpushed commits before removal.
   - Aborts if any worktree has local-only work (unless --force is given).
 
@@ -96,18 +97,21 @@ run_nginx() {
   return 0
 }
 
-# Derive the serve-workspace subdomain label from a slug's task id.
-# Echoes e.g. "cu-1234" for "CU-1234_feature"; returns 1 if not a CU- pattern.
+# Derive the serve-workspace subdomain label from a slug (same logic as
+# serve-workspace): the task id for a task slug, otherwise the whole slug,
+# lowercased with non-DNS characters collapsed to '-'. Returns 1 if nothing
+# usable remains.
 resolve_subdomain() {
   local slug="$1"
   local sub
   sub="$(printf '%s' "${slug%%_*}" | tr '[:upper:]' '[:lower:]')"
-  [[ "$sub" =~ ^${TASK_ID_PREFIX_LC}-[a-z0-9]+$ ]] || return 1
+  sub="$(printf '%s' "$sub" | sed -E 's/[^a-z0-9-]+/-/g; s/-+/-/g; s/^-+//; s/-+$//')"
+  [[ -n "$sub" ]] || return 1
   printf '%s' "$sub"
 }
 
 # Reverse whatever serve-workspace.sh set up: remove the nginx block and reload.
-# The copied envs / symlinked node_modules / cloned vendor live inside the
+# The copied envs / installed node_modules / cloned vendor live inside the
 # session dir and are removed with it, so nothing else needs undoing here.
 revert_serve_setup() {
   local slug="$1"
@@ -207,15 +211,32 @@ detect_slug_from_cwd() {
   log "Auto-detected slug from CWD: $TARGET_SLUG"
 }
 
-validate_slug() {
-  local slug="$1"
+# The branch a worktree currently has checked out (empty if detached/unknown).
+worktree_branch() {
+  git -C "$1" symbolic-ref --quiet --short HEAD 2>/dev/null || true
+}
 
-  # SAFETY: Only allow removal of task-prefixed workspaces (case-insensitive).
-  local slug_lc
-  slug_lc="$(printf '%s' "$slug" | tr '[:upper:]' '[:lower:]')"
-  if [[ "$slug_lc" != "${TASK_ID_PREFIX_LC}"-* ]]; then
-    err "Refusing to remove workspace '$slug': only ${TASK_ID_PREFIX}- prefixed workspaces can be removed."
-    err "This protects the main worktree from accidental deletion."
+# True if BRANCH is one of the protected base ("main") branches.
+is_protected_branch() {
+  local branch="$1"
+  [[ -n "$branch" ]] || return 1
+  case "$branch" in
+    "$FRONTEND_BASE_BRANCH"|"$BACKEND_BASE_BRANCH"|main|master) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# SAFETY: never remove a workspace whose worktrees are on a protected base
+# ("main") branch. A task/plain workspace always sits on its own slug branch, so
+# this only ever fires when the tooling is pointed at a main/base checkout.
+guard_not_main() {
+  local slug="$1" fe="$2" be="$3"
+  local fe_branch="" be_branch=""
+  [[ -d "$fe" ]] && fe_branch="$(worktree_branch "$fe")"
+  [[ -d "$be" ]] && be_branch="$(worktree_branch "$be")"
+  if is_protected_branch "$fe_branch" || is_protected_branch "$be_branch"; then
+    err "Refusing to remove '$slug': worktree is on a protected branch (frontend='$fe_branch', backend='$be_branch')."
+    err "This protects your main worktree from accidental deletion."
     exit 1
   fi
 }
@@ -312,7 +333,7 @@ remove_worktree() {
   # Check if registered as a worktree
   if git -C "$repo" worktree list --porcelain | grep -Fqx "worktree $worktree_path"; then
     log "Removing $label worktree: $worktree_path"
-    # Tolerate failure: serve-workspace adds ignored files (symlinked
+    # Tolerate failure: serve-workspace adds ignored files (installed
     # node_modules, cloned vendor, copied .env). The session-dir rm -rf and the
     # `git worktree prune` in main finish the cleanup if this can't.
     if "$FORCE"; then
@@ -333,6 +354,12 @@ remove_local_branch() {
   local branch="$2"
   local label="$3"
 
+  # Never delete a protected base branch, even if its worktree was already gone.
+  if is_protected_branch "$branch"; then
+    warn "Refusing to delete protected base branch '$branch' in $label repo."
+    return 0
+  fi
+
   if git -C "$repo" show-ref --verify --quiet "refs/heads/$branch"; then
     log "Deleting local $label branch: $branch"
     run_cmd git -C "$repo" branch -D "$branch"
@@ -349,8 +376,6 @@ main() {
     detect_slug_from_cwd
   fi
 
-  validate_slug "$TARGET_SLUG"
-
   local session_dir="$WORKTREES_ROOT/$TARGET_SLUG"
   local frontend_worktree="$session_dir/$FRONTEND_DIR_NAME"
   local backend_worktree="$session_dir/$BACKEND_DIR_NAME"
@@ -362,6 +387,9 @@ main() {
   log "Backend worktree: $backend_worktree"
   log "Workspace file: $workspace_file"
   log ""
+
+  # SAFETY: bail out before touching anything if this is a main/base checkout.
+  guard_not_main "$TARGET_SLUG" "$frontend_worktree" "$backend_worktree"
 
   # --- Safety checks ---
   local clean=true

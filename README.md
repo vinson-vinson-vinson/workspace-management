@@ -34,7 +34,7 @@ adapts to your own repos, branches, domain, and app layout.
 | `create-workspace.sh` | Create (or reopen) a workspace: adds the two worktrees, writes a `.code-workspace` file, and opens VS Code. Optionally opens a Claude Code session with `--claude`. Also `--remove`. |
 | `remove-workspace.sh` | Tear a workspace down safely: reverts routing, removes worktrees, deletes local branches, and cleans the session dir. Refuses to run on unpushed work unless `--force`. |
 | `list-workspaces.sh` | List all current workspaces, star the one you're in, and link each served workspace to its landing URL. |
-| `serve-workspace.sh` | Make a task workspace reachable at `<sub>.<domain>` via Valet/nginx: copies + rewrites envs, writes an nginx block, and wires up dependencies. |
+| `serve-workspace.sh` | Make a workspace reachable at `<sub>.<domain>` via Valet/nginx: copies + rewrites envs, writes an nginx block, then installs dependencies (`yarn` for the frontend, cloned vendor for the backend) and generates the Nuxt scaffolding. |
 
 ## Requirements
 
@@ -96,12 +96,18 @@ The essentials:
 Slugs come in two shapes:
 
 - **Task workspace** — `CU-1234_my-feature` (`<TASK_ID_PREFIX>-<id>_<feature>`).
-  Gets a derived subdomain (`cu-1234.<domain>`) and is the only kind
-  `serve-workspace.sh`/`remove-workspace.sh` will act on.
-- **Plain workspace** — `my-feature`. Branch/worktree only, no routing.
+  Gets a short derived subdomain from the task id (`cu-1234.<domain>`).
+- **Plain workspace** — any other name (`admin-test`, `test-123`, `my-feature`).
+  Served under a subdomain derived from the whole slug (`admin-test.<domain>`).
+
+Both kinds can be created, served, and removed — names are effectively
+unrestricted. The only thing `serve`/`remove` refuse is a worktree sitting on a
+protected base branch (main/master or your configured base branch), so your main
+checkout is never overwritten or deleted.
 
 `TASK_ID_PREFIX` is matched case-insensitively; set it to your own tracker's
-prefix (e.g. `JIRA`, `ENG`) or keep `CU`.
+prefix (e.g. `JIRA`, `ENG`) or keep `CU`. It only governs the *short* subdomain
+form — it no longer gates which workspaces may be served or removed.
 
 ## Usage
 

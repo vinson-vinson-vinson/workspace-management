@@ -15,9 +15,9 @@ set -euo pipefail
 #   1. Copies + rewrites the frontend/backend .env files into the worktree.
 #   2. Writes an nginx server block for <sub>.anny.dev (reusing the wildcard
 #      *.anny.dev cert) and reloads nginx.
-#   3. Sets up dependencies (node_modules symlinked, vendor cloned) and seeds
-#      the backend's Cognitor JWT public key — last, so it only runs after
-#      everything else succeeded.
+#   3. Sets up dependencies (frontend `yarn` install, backend vendor cloned),
+#      generates the Nuxt scaffolding, and seeds the backend's Cognitor JWT
+#      public key — last, so it only runs after everything else succeeded.
 #
 # It does NOT run the `yarn serve-*` commands — that is left to you.
 # -----------------------------------------------------------------------------
@@ -49,7 +49,6 @@ BASE_DOMAIN_RE="${BASE_DOMAIN//./\\.}"
 
 DRY_RUN=false
 ALL_APPS=false
-FRESH_DEPS=false
 VERBOSE=false
 FORCE=false
 INPUT_SLUG=""
@@ -85,7 +84,7 @@ all_app_keys() {
 print_usage() {
   cat <<'USAGE'
 Usage:
-  serve-workspace.sh [SLUG] [--all-apps] [--fresh-deps] [--dry-run]
+  serve-workspace.sh [SLUG] [--all-apps] [--dry-run]
 
 Arguments:
   SLUG        The workspace slug (e.g. CU-1234_my-feature). If omitted,
@@ -94,8 +93,6 @@ Arguments:
 Options:
   --all-apps    Serve every known app (admin, shop, account, panels, outlook)
                 instead of just admin + shop.
-  --fresh-deps  Run `yarn install` / `composer install` in the worktree instead
-                of symlinking node_modules / cloning vendor from the main repos.
   --force       Regenerate the worktree .env files and rewrite/reload the nginx
                 block even if they already exist (overwrites manual edits).
   --dry-run     Print all actions (incl. the nginx block) without executing.
@@ -103,9 +100,11 @@ Options:
   -h, --help    Show this help.
 
 Notes:
-  - Only CU- task workspaces are supported. The subdomain is derived from the
-    task id: CU-1234_my-feature -> cu-1234.anny.dev. If the derived subdomain
-    is not of the form cu-<alnum>, the script aborts.
+  - Works for any workspace name. The subdomain is derived from the slug: a task
+    workspace CU-1234_my-feature -> cu-1234; a plain workspace admin-test ->
+    admin-test. Names are lowercased and non-DNS characters collapsed to '-'.
+  - Refuses to serve a worktree that is on a protected base branch (main/master
+    or your configured base branch), so it never overwrites your main setup.
   - Safe to re-run: it keeps existing envs, and only touches nginx (and prompts
     for sudo) when the routing block actually changes. Use --force to refresh.
   - Does NOT start the dev servers; it prints the `yarn serve-*` commands to run.
@@ -129,7 +128,6 @@ parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --all-apps)   ALL_APPS=true; shift ;;
-      --fresh-deps) FRESH_DEPS=true; shift ;;
       --force)      FORCE=true; shift ;;
       --dry-run)    DRY_RUN=true; shift ;;
       -v|--verbose) VERBOSE=true; shift ;;
@@ -160,18 +158,38 @@ detect_slug_from_cwd() {
   log "Auto-detected slug from CWD: $INPUT_SLUG"
 }
 
-# Derive the subdomain label from the slug's task id and validate the pattern.
+# Derive a DNS-safe subdomain label from the slug. For a task workspace
+# (CU-1234_feature) this is the task id (cu-1234); for a plain workspace it's the
+# whole slug (admin-test -> admin-test). Any character that isn't DNS-label-safe
+# is lowercased and collapsed to a hyphen, so EVERY workspace name yields a
+# usable subdomain.
 resolve_subdomain() {
   local slug="$1"
-  local task_id="${slug%%_*}"          # CU-1234_feature -> CU-1234
   local sub
-  sub="$(printf '%s' "$task_id" | tr '[:upper:]' '[:lower:]')"
-  if [[ ! "$sub" =~ ^cu-[a-z0-9]+$ ]]; then
-    err "Refusing to serve '$slug': derived subdomain '$sub' is not of the form cu-<alnum>."
-    err "serve-workspace only supports CU- task workspaces (CU-<id>_<name>)."
+  sub="$(printf '%s' "${slug%%_*}" | tr '[:upper:]' '[:lower:]')"
+  sub="$(printf '%s' "$sub" | sed -E 's/[^a-z0-9-]+/-/g; s/-+/-/g; s/^-+//; s/-+$//')"
+  if [[ -z "$sub" ]]; then
+    err "Refusing to serve '$slug': no DNS-safe characters to build a subdomain from."
     exit 1
   fi
   printf '%s' "$sub"
+}
+
+# The branch a worktree currently has checked out (empty if detached/unknown).
+worktree_branch() {
+  git -C "$1" symbolic-ref --quiet --short HEAD 2>/dev/null || true
+}
+
+# True if BRANCH is one of the protected base ("main") branches. Serving rewrites
+# env files and nginx routing; doing that against a main checkout would clobber
+# your main setup's envs, so we never serve one.
+is_protected_branch() {
+  local branch="$1"
+  [[ -n "$branch" ]] || return 1
+  case "$branch" in
+    "$FRONTEND_BASE_BRANCH"|"$BACKEND_BASE_BRANCH"|main|master) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 # Deterministic per-workspace port block base, derived from the subdomain so the
@@ -392,51 +410,75 @@ ensure_nginx() {
 
 # ------------------------------ dependencies --------------------------------
 setup_dependencies() {
+  local -a served=("$@")   # app keys actually being served (for nuxi prepare)
+
   # Copy the gitignored root yarn env FIRST — .yarnrc.yml resolves private
   # registry tokens (ANNY_NPM_TOKEN, FONTAWESOME_NPM_TOKEN) from it, and Yarn 4
-  # auto-loads .env.yarn, so every yarn command (incl. `yarn install` below and
-  # the `yarn serve-*` you run later) needs it present.
+  # auto-loads .env.yarn, so every yarn command (the `yarn` install below and the
+  # `yarn serve-*` you run later) needs it present.
   if [[ -f "$FRONTEND_REPO/.env.yarn" && ! -f "$WT_FRONTEND/.env.yarn" ]]; then
     run_cmd cp "$FRONTEND_REPO/.env.yarn" "$WT_FRONTEND/.env.yarn"
   fi
 
-  if "$FRESH_DEPS"; then
-    log "Installing fresh dependencies (this can take a while)…"
-    run_cmd bash -c "cd '$WT_FRONTEND' && yarn"
-    run_cmd bash -c "cd '$WT_BACKEND' && composer install"
+  # Frontend: install real dependencies with Yarn. We deliberately do NOT symlink
+  # node_modules from the main repo — a symlink is confusing (stack traces point
+  # back at the main clone) and couples the worktree to main. Yarn's postinstall
+  # (nuxi prepare) also generates the root .nuxt that every app's tsconfig
+  # extends. Install once; a re-run skips if node_modules already exists (run
+  # `yarn` in the worktree yourself to refresh after changing dependencies).
+  if [[ -d "$WT_FRONTEND/node_modules" ]]; then
+    log "Frontend node_modules already present (skipping yarn — run 'yarn' in the worktree to refresh)."
   else
-    # Frontend: symlink each main node_modules dir into the worktree (safe —
-    # Node resolves modules relative to the importing file, no base-dir remap).
-    # Skip any whose worktree parent is absent (this branch may lack newer apps)
-    # and never let a single ln failure abort the whole step.
-    local nm rel target parent
-    while IFS= read -r nm; do
-      rel="${nm#"$FRONTEND_REPO"/}"
-      target="$WT_FRONTEND/$rel"
-      parent="$(dirname "$target")"
-      if [[ ! -d "$parent" ]]; then
-        log "Skipping node_modules for '$rel' (not in this worktree)."
-        continue
-      fi
-      if [[ -e "$target" || -L "$target" ]]; then
-        log "node_modules already present: $rel (skipping)"
-        continue
-      fi
-      run_cmd ln -s "$nm" "$target" || warn "Failed to symlink node_modules for '$rel'."
-    done < <(find "$FRONTEND_REPO" -maxdepth 2 -name node_modules -type d)
+    log "Installing frontend dependencies with yarn (this can take a while)…"
+    run_cmd bash -c "cd '$WT_FRONTEND' && yarn"
+  fi
 
-    # Backend: CLONE vendor (copy-on-write) rather than symlink. A symlinked
-    # vendor makes Composer's autoloader resolve its base dir to the MAIN repo
-    # (PHP realpaths __DIR__), so the worktree would run main's backend code.
-    if [[ -e "$WT_BACKEND/vendor" ]]; then
-      log "vendor already present in worktree (skipping)."
-    elif "$DRY_RUN"; then
-      printf '[dry-run] cp -Rc %s %s (clone vendor)\n' "$BACKEND_REPO/vendor" "$WT_BACKEND/vendor"
+  # Backend: CLONE vendor (copy-on-write) rather than symlink. A symlinked
+  # vendor makes Composer's autoloader resolve its base dir to the MAIN repo
+  # (PHP realpaths __DIR__), so the worktree would run main's backend code.
+  # (Run `composer install` in the worktree yourself if you need fresh vendor.)
+  if [[ -e "$WT_BACKEND/vendor" ]]; then
+    log "vendor already present in worktree (skipping)."
+  elif "$DRY_RUN"; then
+    printf '[dry-run] cp -Rc %s %s (clone vendor)\n' "$BACKEND_REPO/vendor" "$WT_BACKEND/vendor"
+  else
+    cp -Rc "$BACKEND_REPO/vendor" "$WT_BACKEND/vendor" 2>/dev/null \
+      || cp -R "$BACKEND_REPO/vendor" "$WT_BACKEND/vendor"
+    log "Cloned vendor into worktree."
+  fi
+
+  # Generate the Nuxt scaffolding the worktree needs. Every app's root
+  # tsconfig.json does `extends: ./.nuxt/tsconfig.json`, a file produced by
+  # `nuxi prepare`. The `yarn` above runs it via postinstall for the ROOT, but
+  # only for the root — `yarn serve-*` (nuxi dev) then generates each app's own
+  # .nuxt, but not necessarily before the first request. And when node_modules
+  # was already present we skip `yarn` entirely, so nothing regenerated .nuxt.
+  # Missing .nuxt makes Vite 500 ("failed to resolve extends ./.nuxt/…"), so we
+  # prepare the root and each served app here, guarded on the generated tsconfig
+  # so re-runs are cheap.
+  local nuxi="$WT_FRONTEND/node_modules/.bin/nuxi"
+  if [[ ! -e "$nuxi" ]]; then
+    warn "nuxi not found in worktree node_modules — skipping Nuxt prepare (run 'yarn' in $WT_FRONTEND)."
+  else
+    if [[ -f "$WT_FRONTEND/.nuxt/tsconfig.json" ]]; then
+      log "Root Nuxt scaffolding already present (skipping)."
     else
-      cp -Rc "$BACKEND_REPO/vendor" "$WT_BACKEND/vendor" 2>/dev/null \
-        || cp -R "$BACKEND_REPO/vendor" "$WT_BACKEND/vendor"
-      log "Cloned vendor into worktree."
+      log "Preparing root Nuxt scaffolding (nuxi prepare)…"
+      run_cmd bash -c "cd '$WT_FRONTEND' && ./node_modules/.bin/nuxi prepare" \
+        || warn "nuxi prepare (root) failed — the app may 500 until .nuxt is generated."
     fi
+    local sa dir
+    for sa in "${served[@]}"; do
+      dir="$(app_dir "$sa")" || continue
+      [[ -d "$WT_FRONTEND/$dir" ]] || continue
+      if [[ -f "$WT_FRONTEND/$dir/.nuxt/tsconfig.json" ]]; then
+        log "Nuxt scaffolding already present for $dir (skipping)."
+      else
+        log "Preparing Nuxt scaffolding for ${dir}…"
+        run_cmd bash -c "cd '$WT_FRONTEND' && ./node_modules/.bin/nuxi prepare '$dir'" \
+          || warn "nuxi prepare '$dir' failed — that app may 500 until its .nuxt is generated."
+      fi
+    done
   fi
 
   # Seed the backend's Cognitor JWT public key. The backend verifies
@@ -475,7 +517,7 @@ main() {
   require_command sed
   require_command nginx
   require_command cksum
-  if "$FRESH_DEPS"; then require_command yarn; require_command composer; fi
+  require_command yarn
 
   [[ -f "$VALET_CERT" && -f "$VALET_CERT_KEY" ]] \
     || { err "Wildcard cert not found ($VALET_CERT). Is anny.dev secured in Valet?"; exit 1; }
@@ -493,6 +535,18 @@ main() {
 
   [[ -d "$WT_FRONTEND" && -d "$WT_BACKEND" ]] \
     || { err "Worktree not found for '$slug'. Run create-workspace.sh first."; exit 1; }
+
+  # SAFETY: never serve — and thus never overwrite envs or nginx routing — a
+  # worktree that is sitting on a protected base branch. That would be your main
+  # setup, not a task workspace.
+  local fe_branch be_branch
+  fe_branch="$(worktree_branch "$WT_FRONTEND")"
+  be_branch="$(worktree_branch "$WT_BACKEND")"
+  if is_protected_branch "$fe_branch" || is_protected_branch "$be_branch"; then
+    err "Refusing to serve '$slug': worktree is on a protected branch (frontend='$fe_branch', backend='$be_branch')."
+    err "serve-workspace rewrites env files and nginx routing; it will not touch a main/base checkout."
+    exit 1
+  fi
 
   PORT_BASE="$(compute_port_base "$sub")"
 
@@ -524,7 +578,7 @@ main() {
   ensure_nginx "$host" "${served_apps[@]}"
 
   # 3) dependencies (last — only after routing/env succeeded; guarded/idempotent)
-  setup_dependencies
+  setup_dependencies "${served_apps[@]}"
 
   # summary
   log ""

@@ -32,8 +32,10 @@ BACKEND_BASE_BRANCH="main"
 
 # Task-id prefix for "task" workspaces, e.g. ClickUp's "CU". A slug of the form
 # <PREFIX>-<id>_<feature-name> (CU-1234_my-feature) is treated as a task
-# workspace: it gets a subdomain, and only task workspaces may be served/removed
-# by the serve/remove safety checks. Case-insensitive.
+# workspace and gets a short subdomain derived from the task id. Any other name
+# works too (served under a subdomain derived from the whole slug). The prefix no
+# longer gates which workspaces may be served/removed — that is now guarded by a
+# "don't touch a main/base checkout" branch check. Case-insensitive.
 TASK_ID_PREFIX="CU"
 
 # Whether create-workspace also opens a Claude Code session (Claude desktop app)
@@ -46,8 +48,9 @@ OPEN_CLAUDE_DEFAULT=false
 # Laravel Valet's nginx + wildcard cert. If you don't use serve-workspace you
 # can leave this section at its defaults.
 
-# Task workspaces are served at <sub>.$BASE_DOMAIN (sub is the lowercased task
-# id, e.g. cu-1234.anny.test). The main workspace is served at $BASE_DOMAIN.
+# Workspaces are served at <sub>.$BASE_DOMAIN. For a task workspace <sub> is the
+# lowercased task id (cu-1234.anny.test); for any other name it's the whole slug
+# lowercased (admin-test.anny.test). The main workspace is served at $BASE_DOMAIN.
 BASE_DOMAIN="anny.test"
 
 # Landing path shown by list-workspaces for each served workspace.

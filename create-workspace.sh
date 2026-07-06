@@ -70,6 +70,26 @@ err() {
   printf '[session] ERROR: %s\n' "$*" >&2
 }
 
+warn() {
+  printf '[session] WARN: %s\n' "$*" >&2
+}
+
+# The branch a worktree currently has checked out (empty if detached/unknown).
+worktree_branch() {
+  git -C "$1" symbolic-ref --quiet --short HEAD 2>/dev/null || true
+}
+
+# True if BRANCH is one of the protected base ("main") branches we must never
+# tear down.
+is_protected_branch() {
+  local branch="$1"
+  [[ -n "$branch" ]] || return 1
+  case "$branch" in
+    "$FRONTEND_BASE_BRANCH"|"$BACKEND_BASE_BRANCH"|main|master) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 run_cmd() {
   if "$DRY_RUN"; then
     printf '[dry-run] %s\n' "$*"
@@ -349,6 +369,16 @@ remove_session() {
 
   log "Remove mode enabled for slug: $branch_slug"
 
+  # SAFETY: never tear down a worktree that is on a protected base branch.
+  local fe_branch="" be_branch=""
+  [[ -d "$frontend_worktree" ]] && fe_branch="$(worktree_branch "$frontend_worktree")"
+  [[ -d "$backend_worktree" ]] && be_branch="$(worktree_branch "$backend_worktree")"
+  if is_protected_branch "$fe_branch" || is_protected_branch "$be_branch"; then
+    err "Refusing to remove '$branch_slug': worktree is on a protected branch (frontend='$fe_branch', backend='$be_branch')."
+    err "This protects your main worktree from accidental deletion."
+    exit 1
+  fi
+
   if worktree_registered "$FRONTEND_REPO" "$frontend_worktree"; then
     run_cmd git -C "$FRONTEND_REPO" worktree remove -f "$frontend_worktree"
   elif [[ -d "$frontend_worktree" ]]; then
@@ -367,16 +397,20 @@ remove_session() {
     log "No backend worktree found. Skipping."
   fi
 
-  if branch_exists_local "$FRONTEND_REPO" "$branch_slug"; then
-    run_cmd git -C "$FRONTEND_REPO" branch -D "$branch_slug"
+  if is_protected_branch "$branch_slug"; then
+    warn "Refusing to delete protected base branch '$branch_slug'."
   else
-    log "No local frontend branch '$branch_slug'. Skipping."
-  fi
+    if branch_exists_local "$FRONTEND_REPO" "$branch_slug"; then
+      run_cmd git -C "$FRONTEND_REPO" branch -D "$branch_slug"
+    else
+      log "No local frontend branch '$branch_slug'. Skipping."
+    fi
 
-  if branch_exists_local "$BACKEND_REPO" "$branch_slug"; then
-    run_cmd git -C "$BACKEND_REPO" branch -D "$branch_slug"
-  else
-    log "No local backend branch '$branch_slug'. Skipping."
+    if branch_exists_local "$BACKEND_REPO" "$branch_slug"; then
+      run_cmd git -C "$BACKEND_REPO" branch -D "$branch_slug"
+    else
+      log "No local backend branch '$branch_slug'. Skipping."
+    fi
   fi
 
   if [[ -f "$workspace_file" ]]; then

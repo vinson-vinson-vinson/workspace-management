@@ -2,9 +2,12 @@
 
 set -euo pipefail
 
-# Load configuration (see config.example.sh). WSM_CONFIG can point elsewhere.
-# Resolve this script's real dir following symlinks, so it still finds config.sh
-# when symlinked onto your PATH (see install.sh).
+# Load configuration (see config.example.sh). Resolution order:
+#   1. $WSM_CONFIG                                     (explicit override)
+#   2. config.sh next to the script                   (git clone / install.sh)
+#   3. $XDG_CONFIG_HOME/workspace-management/config.sh (Homebrew / packaged)
+# Resolve this script's real dir following symlinks so a sibling config.sh is
+# found even when the command is symlinked onto your PATH (install.sh / brew).
 _src="${BASH_SOURCE[0]}"
 while [[ -h "$_src" ]]; do
   _dir="$(cd -P "$(dirname "$_src")" && pwd)"
@@ -12,10 +15,19 @@ while [[ -h "$_src" ]]; do
   [[ "$_src" != /* ]] && _src="$_dir/$_src"
 done
 SCRIPT_DIR="$(cd -P "$(dirname "$_src")" && pwd)"
-CONFIG_FILE="${WSM_CONFIG:-$SCRIPT_DIR/config.sh}"
+_xdg_config="${XDG_CONFIG_HOME:-$HOME/.config}/workspace-management/config.sh"
+if [[ -n "${WSM_CONFIG:-}" ]]; then
+  CONFIG_FILE="$WSM_CONFIG"
+elif [[ -f "$SCRIPT_DIR/config.sh" ]]; then
+  CONFIG_FILE="$SCRIPT_DIR/config.sh"
+else
+  CONFIG_FILE="$_xdg_config"
+fi
 if [[ ! -f "$CONFIG_FILE" ]]; then
   printf 'ERROR: config file not found: %s\n' "$CONFIG_FILE" >&2
-  printf 'Copy config.example.sh to config.sh and edit it (or set WSM_CONFIG).\n' >&2
+  printf 'Copy config.example.sh to config.sh next to the scripts, or to\n' >&2
+  printf '  %s\n' "$_xdg_config" >&2
+  printf 'or point WSM_CONFIG at your config file.\n' >&2
   exit 1
 fi
 # shellcheck source=/dev/null
@@ -50,6 +62,25 @@ link() {
   else
     printf '%s' "$url"
   fi
+}
+
+# Extract a workspace's accent color (titleBar.activeBackground) from its
+# .code-workspace file. Echoes a hex like "#571f74", or nothing if unavailable.
+workspace_color() {
+  local file="$ROOT_DIR/$1.code-workspace"
+  [[ -f "$file" ]] || return 0
+  grep -o '"titleBar\.activeBackground"[[:space:]]*:[[:space:]]*"#[0-9a-fA-F]\{6\}"' "$file" 2>/dev/null \
+    | grep -o '#[0-9a-fA-F]\{6\}' | head -n1
+}
+
+# Render a colored filled circle for a hex color (#RRGGBB) via a truecolor
+# foreground, only on a terminal. Echoes a colored ●, or nothing.
+swatch() {
+  local hex="${1#\#}"
+  [[ ${#hex} -eq 6 ]] || return 0
+  "$TTY" || return 0
+  local r=$((16#${hex:0:2})) g=$((16#${hex:2:2})) b=$((16#${hex:4:2}))
+  printf '\033[38;2;%d;%d;%dm●\033[0m' "$r" "$g" "$b"
 }
 
 print_usage() {
@@ -189,19 +220,21 @@ main() {
   local m
 
   # Main workspace: the root repos, always served at anny.dev.
-  local main_label
+  local main_label sw
   main_label="$(main_branch_label)"
   [[ "$current_key" == "MAIN" ]] && m='* ' || m='  '
-  printf '%sMAIN %s  %s\n' "$m" "$main_label" "$(link "${BASE_DOMAIN}${ADMIN_PATH}")"
+  sw="$(swatch "$(workspace_color MAIN)")"; [[ -n "$sw" ]] && sw+=' '
+  printf '%s%sMAIN %s  %s\n' "$m" "$sw" "$main_label" "$(link "${BASE_DOMAIN}${ADMIN_PATH}")"
 
   local url
   for slug in "${slugs[@]}"; do
     [[ "$current_key" == "$slug" ]] && m='* ' || m='  '
     url="$(admin_url "$slug")"
+    sw="$(swatch "$(workspace_color "$slug")")"; [[ -n "$sw" ]] && sw+=' '
     if [[ -n "$url" ]]; then
-      printf '%s%s  %s\n' "$m" "$slug" "$(link "$url")"
+      printf '%s%s%s  %s\n' "$m" "$sw" "$slug" "$(link "$url")"
     else
-      printf '%s%s\n' "$m" "$slug"
+      printf '%s%s%s\n' "$m" "$sw" "$slug"
     fi
   done
 }

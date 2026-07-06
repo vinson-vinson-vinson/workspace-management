@@ -49,6 +49,23 @@ adapts to your own repos, branches, domain, and app layout.
 
 ## Setup
 
+### Homebrew (team install)
+
+If a tap has been published (see [PACKAGING.md](PACKAGING.md)):
+
+```bash
+brew tap vinson-vinson-vinson/tap git@github.com:vinson-vinson-vinson/homebrew-tap.git
+brew install vinson-vinson-vinson/tap/workspace-management
+
+# One-time config (brew prints this in its caveats):
+mkdir -p ~/.config/workspace-management
+cp "$(brew --prefix)/share/workspace-management/config.example.sh" \
+   ~/.config/workspace-management/config.sh
+$EDITOR ~/.config/workspace-management/config.sh
+```
+
+### From a git clone
+
 ```bash
 git clone <your-fork-url> workspace-management
 cd workspace-management
@@ -69,7 +86,14 @@ anywhere; the symlinks point back at the checkout, so `git pull` updates the
 commands in place.
 
 `config.sh` is gitignored, so your local paths never get committed. Every script
-sources it. To keep the config somewhere else, point `WSM_CONFIG` at it:
+looks for its config in this order:
+
+1. `$WSM_CONFIG`, if set (explicit override)
+2. `config.sh` next to the scripts (git-clone / `install.sh` layout)
+3. `~/.config/workspace-management/config.sh` (`$XDG_CONFIG_HOME`; Homebrew layout)
+
+So a git clone keeps `config.sh` in the checkout, a brew install keeps it under
+`~/.config`, and either way you can override with `WSM_CONFIG`:
 
 ```bash
 WSM_CONFIG=~/dotfiles/wsm.config.sh ./list-workspaces.sh

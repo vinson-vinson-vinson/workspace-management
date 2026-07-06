@@ -2,9 +2,12 @@
 
 set -euo pipefail
 
-# Load configuration (see config.example.sh). WSM_CONFIG can point elsewhere.
-# Resolve this script's real dir following symlinks, so it still finds config.sh
-# when symlinked onto your PATH (see install.sh).
+# Load configuration (see config.example.sh). Resolution order:
+#   1. $WSM_CONFIG                                     (explicit override)
+#   2. config.sh next to the script                   (git clone / install.sh)
+#   3. $XDG_CONFIG_HOME/workspace-management/config.sh (Homebrew / packaged)
+# Resolve this script's real dir following symlinks so a sibling config.sh is
+# found even when the command is symlinked onto your PATH (install.sh / brew).
 _src="${BASH_SOURCE[0]}"
 while [[ -h "$_src" ]]; do
   _dir="$(cd -P "$(dirname "$_src")" && pwd)"
@@ -12,10 +15,19 @@ while [[ -h "$_src" ]]; do
   [[ "$_src" != /* ]] && _src="$_dir/$_src"
 done
 SCRIPT_DIR="$(cd -P "$(dirname "$_src")" && pwd)"
-CONFIG_FILE="${WSM_CONFIG:-$SCRIPT_DIR/config.sh}"
+_xdg_config="${XDG_CONFIG_HOME:-$HOME/.config}/workspace-management/config.sh"
+if [[ -n "${WSM_CONFIG:-}" ]]; then
+  CONFIG_FILE="$WSM_CONFIG"
+elif [[ -f "$SCRIPT_DIR/config.sh" ]]; then
+  CONFIG_FILE="$SCRIPT_DIR/config.sh"
+else
+  CONFIG_FILE="$_xdg_config"
+fi
 if [[ ! -f "$CONFIG_FILE" ]]; then
   printf 'ERROR: config file not found: %s\n' "$CONFIG_FILE" >&2
-  printf 'Copy config.example.sh to config.sh and edit it (or set WSM_CONFIG).\n' >&2
+  printf 'Copy config.example.sh to config.sh next to the scripts, or to\n' >&2
+  printf '  %s\n' "$_xdg_config" >&2
+  printf 'or point WSM_CONFIG at your config file.\n' >&2
   exit 1
 fi
 # shellcheck source=/dev/null
@@ -329,6 +341,24 @@ open_claude_session() {
   run_cmd open "$url"
 }
 
+# Pick a legible title-bar foreground for a given "#rrggbb" background.
+# Uses the W3C relative-luminance threshold so light backgrounds (yellows,
+# pastels) get dark text instead of unreadable white.
+contrast_foreground() {
+  local hex="${1#\#}"
+  local r g b
+  r=$((16#${hex:0:2}))
+  g=$((16#${hex:2:2}))
+  b=$((16#${hex:4:2}))
+  # Perceived luminance (integer approximation of 0.299R + 0.587G + 0.114B).
+  local lum=$(((r * 299 + g * 587 + b * 114) / 1000))
+  if ((lum > 150)); then
+    printf 'dark'
+  else
+    printf 'light'
+  fi
+}
+
 write_workspace_file() {
   local workspace_file="$1"
   local frontend_path="$2"
@@ -338,6 +368,15 @@ write_workspace_file() {
   if "$DRY_RUN"; then
     printf '[dry-run] write workspace file %s\n' "$workspace_file"
     return
+  fi
+
+  local active_fg inactive_fg
+  if [[ "$(contrast_foreground "$accent_color")" == "dark" ]]; then
+    active_fg="#000000"
+    inactive_fg="#000000cc"
+  else
+    active_fg="#ffffff"
+    inactive_fg="#ffffffcc"
   fi
 
   cat >"$workspace_file" <<EOF
@@ -351,8 +390,13 @@ write_workspace_file() {
     "workbench.colorCustomizations": {
       "titleBar.activeBackground": "$accent_color",
       "titleBar.inactiveBackground": "$accent_color",
-      "titleBar.activeForeground": "#ffffff",
-      "titleBar.inactiveForeground": "#ffffffcc"
+      "titleBar.activeForeground": "$active_fg",
+      "titleBar.inactiveForeground": "$inactive_fg",
+      "commandCenter.foreground": "$active_fg",
+      "commandCenter.activeForeground": "$active_fg",
+      "commandCenter.inactiveForeground": "$inactive_fg",
+      "commandCenter.border": "$inactive_fg",
+      "commandCenter.inactiveBorder": "$inactive_fg"
     }
   }
 }

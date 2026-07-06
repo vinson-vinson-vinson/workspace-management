@@ -401,7 +401,7 @@ setup_dependencies() {
 
   if "$FRESH_DEPS"; then
     log "Installing fresh dependencies (this can take a while)…"
-    run_cmd bash -c "cd '$WT_FRONTEND' && yarn install"
+    run_cmd bash -c "cd '$WT_FRONTEND' && yarn"
     run_cmd bash -c "cd '$WT_BACKEND' && composer install"
   else
     # Frontend: symlink each main node_modules dir into the worktree (safe —

@@ -15,8 +15,9 @@ set -euo pipefail
 #   1. Copies + rewrites the frontend/backend .env files into the worktree.
 #   2. Writes an nginx server block for <sub>.anny.dev (reusing the wildcard
 #      *.anny.dev cert) and reloads nginx.
-#   3. Sets up dependencies (node_modules symlinked, vendor cloned) — last, so
-#      it only runs after everything else succeeded.
+#   3. Sets up dependencies (node_modules symlinked, vendor cloned) and seeds
+#      the backend's Cognitor JWT public key — last, so it only runs after
+#      everything else succeeded.
 #
 # It does NOT run the `yarn serve-*` commands — that is left to you.
 # -----------------------------------------------------------------------------
@@ -436,6 +437,22 @@ setup_dependencies() {
         || cp -R "$BACKEND_REPO/vendor" "$WT_BACKEND/vendor"
       log "Cloned vendor into worktree."
     fi
+  fi
+
+  # Seed the backend's Cognitor JWT public key. The backend verifies
+  # Cognitor-issued tokens (via anny/laravel-jwt-guard) against
+  # storage/cognitor-public.key. It's a generated secret that lives outside git,
+  # so a fresh worktree doesn't get it — without it file_get_contents() throws,
+  # every authenticated request 500s, and the frontend's auth retry trips a 503.
+  # Copy it from the main backend so worktree auth works out of the box.
+  local cog_key="storage/cognitor-public.key"
+  if [[ ! -f "$BACKEND_REPO/$cog_key" ]]; then
+    warn "Main backend missing $cog_key — worktree Cognitor JWT verification will 500."
+  elif [[ -f "$WT_BACKEND/$cog_key" ]]; then
+    log "Cognitor public key already present in worktree (skipping)."
+  else
+    run_cmd cp "$BACKEND_REPO/$cog_key" "$WT_BACKEND/$cog_key"
+    log "Seeded Cognitor public key into worktree ($cog_key)."
   fi
 
   # Laravel: ensure writable runtime dirs and drop any stale cached config.

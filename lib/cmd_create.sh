@@ -145,7 +145,10 @@ contrast_foreground() {
 }
 
 write_workspace_file() {
-  local workspace_file="$1" frontend_path="$2" backend_path="$3" accent_color="$4"
+  # frontend_dir/backend_dir are relative to the workspace file, which now lives
+  # inside the session dir next to the two worktrees — so the paths are just the
+  # worktree directory names and the whole session dir is self-contained.
+  local workspace_file="$1" frontend_dir="$2" backend_dir="$3" accent_color="$4"
   if "$DRY_RUN"; then
     printf '[dry-run] write workspace file %s\n' "$workspace_file"; return
   fi
@@ -158,8 +161,8 @@ write_workspace_file() {
   cat >"$workspace_file" <<EOF
 {
   "folders": [
-    { "path": "$frontend_path" },
-    { "path": "$backend_path" }
+    { "path": "$frontend_dir" },
+    { "path": "$backend_dir" }
   ],
   "settings": {
     "window.titleBarStyle": "custom",
@@ -257,7 +260,7 @@ cmd_create() {
   session_dir="$WORKTREES_ROOT/$branch_slug"
   frontend_worktree="$session_dir/$FRONTEND_DIR_NAME"
   backend_worktree="$session_dir/$BACKEND_DIR_NAME"
-  workspace_file="$ROOT_DIR/$branch_slug.code-workspace"
+  workspace_file="$(workspace_file_for "$branch_slug")"
 
   frontend_ref="$(resolve_base_ref "$FRONTEND_REPO" "$FRONTEND_BASE_BRANCH")"
   backend_ref="$(resolve_base_ref "$BACKEND_REPO" "$BACKEND_BASE_BRANCH")"
@@ -277,7 +280,7 @@ cmd_create() {
       if [[ ! -f "$workspace_file" ]]; then
         workspace_color="$(random_workspace_color)"
         log "Workspace color: $workspace_color"
-        write_workspace_file "$workspace_file" "$frontend_worktree" "$backend_worktree" "$workspace_color"
+        write_workspace_file "$workspace_file" "$FRONTEND_DIR_NAME" "$BACKEND_DIR_NAME" "$workspace_color"
       fi
       open_workspace "$workspace_file" "$session_dir"
       exit 0
@@ -312,7 +315,7 @@ cmd_create() {
 
   workspace_color="$(random_workspace_color)"
   log "Workspace color: $workspace_color"
-  write_workspace_file "$workspace_file" "$frontend_worktree" "$backend_worktree" "$workspace_color"
+  write_workspace_file "$workspace_file" "$FRONTEND_DIR_NAME" "$BACKEND_DIR_NAME" "$workspace_color"
 
   log "Worktrees created successfully. Opening workspace."
   open_workspace "$workspace_file" "$session_dir"

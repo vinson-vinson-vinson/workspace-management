@@ -15,11 +15,11 @@ A "workspace" is one session directory containing a **frontend** and a
 <ROOT_DIR>/
 ├── <frontend-repo>/                 # your main frontend clone
 ├── <backend-repo>/                  # your main backend clone
-├── worktrees/
-│   └── CU-1234_my-feature/          # a workspace ("session")
-│       ├── <frontend-repo>/         #   frontend worktree on branch CU-1234_my-feature
-│       └── <backend-repo>/          #   backend  worktree on branch CU-1234_my-feature
-└── CU-1234_my-feature.code-workspace
+└── worktrees/
+    └── CU-1234_my-feature/          # a workspace ("session"), self-contained
+        ├── <frontend-repo>/         #   frontend worktree on branch CU-1234_my-feature
+        ├── <backend-repo>/          #   backend  worktree on branch CU-1234_my-feature
+        └── CU-1234_my-feature.code-workspace
 ```
 
 The tooling was extracted from a specific two-repo setup (a Nuxt-style

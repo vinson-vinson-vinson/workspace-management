@@ -93,6 +93,14 @@ is_protected_branch() {
   esac
 }
 
+# Path to a workspace's VS Code .code-workspace file. It lives INSIDE the session
+# dir (alongside the two worktrees) so the whole workspace is self-contained.
+workspace_file_for() { printf '%s' "$WORKTREES_ROOT/$1/$1.code-workspace"; }
+
+# Pre-move location (project root). Kept so `list`/`remove` still handle
+# workspaces created before the file moved into the session dir.
+legacy_workspace_file_for() { printf '%s' "$ROOT_DIR/$1.code-workspace"; }
+
 # Echo the workspace slug for the current directory (first path component under
 # WORKTREES_ROOT), or return 1 if the cwd isn't inside a workspace. No output on
 # failure so callers can print their own error (avoids exit-in-subshell).

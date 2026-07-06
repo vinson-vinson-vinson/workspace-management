@@ -211,7 +211,7 @@ cmd_remove() {
   local session_dir="$WORKTREES_ROOT/$slug"
   local frontend_worktree="$session_dir/$FRONTEND_DIR_NAME"
   local backend_worktree="$session_dir/$BACKEND_DIR_NAME"
-  local workspace_file="$ROOT_DIR/$slug.code-workspace"
+  local workspace_file; workspace_file="$(workspace_file_for "$slug")"
 
   log "Slug: $slug"
   log "Session dir: $session_dir"
@@ -267,12 +267,17 @@ cmd_remove() {
     log "Session directory does not exist. Skipping."
   fi
 
-  if [[ -f "$workspace_file" ]]; then
-    log "Removing workspace file: $workspace_file"
-    run_cmd rm -f "$workspace_file"
-  else
-    log "No workspace file found. Skipping."
-  fi
+  # The workspace file now lives inside the session dir (removed above with it);
+  # also clean the legacy project-root location for pre-move workspaces.
+  local wf removed_wf=false
+  for wf in "$workspace_file" "$(legacy_workspace_file_for "$slug")"; do
+    if [[ -f "$wf" ]]; then
+      log "Removing workspace file: $wf"
+      run_cmd rm -f "$wf"
+      removed_wf=true
+    fi
+  done
+  "$removed_wf" || log "No workspace file found. Skipping."
 
   run_cmd git -C "$FRONTEND_REPO" worktree prune
   run_cmd git -C "$BACKEND_REPO" worktree prune

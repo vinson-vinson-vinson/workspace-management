@@ -33,7 +33,9 @@ _ws_link() {
 # Extract a workspace's accent color (titleBar.activeBackground) from its
 # .code-workspace file. Echoes a hex like "#571f74", or nothing.
 _ws_color() {
-  local file="$ROOT_DIR/$1.code-workspace"
+  local file
+  file="$(workspace_file_for "$1")"
+  [[ -f "$file" ]] || file="$(legacy_workspace_file_for "$1")"
   [[ -f "$file" ]] || return 0
   grep -o '"titleBar\.activeBackground"[[:space:]]*:[[:space:]]*"#[0-9a-fA-F]\{6\}"' "$file" 2>/dev/null \
     | grep -o '#[0-9a-fA-F]\{6\}' | head -n1

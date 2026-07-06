@@ -2,9 +2,12 @@
 
 set -euo pipefail
 
-# Load configuration (see config.example.sh). WSM_CONFIG can point elsewhere.
-# Resolve this script's real dir following symlinks, so it still finds config.sh
-# when symlinked onto your PATH (see install.sh).
+# Load configuration (see config.example.sh). Resolution order:
+#   1. $WSM_CONFIG                                     (explicit override)
+#   2. config.sh next to the script                   (git clone / install.sh)
+#   3. $XDG_CONFIG_HOME/workspace-management/config.sh (Homebrew / packaged)
+# Resolve this script's real dir following symlinks so a sibling config.sh is
+# found even when the command is symlinked onto your PATH (install.sh / brew).
 _src="${BASH_SOURCE[0]}"
 while [[ -h "$_src" ]]; do
   _dir="$(cd -P "$(dirname "$_src")" && pwd)"
@@ -12,10 +15,19 @@ while [[ -h "$_src" ]]; do
   [[ "$_src" != /* ]] && _src="$_dir/$_src"
 done
 SCRIPT_DIR="$(cd -P "$(dirname "$_src")" && pwd)"
-CONFIG_FILE="${WSM_CONFIG:-$SCRIPT_DIR/config.sh}"
+_xdg_config="${XDG_CONFIG_HOME:-$HOME/.config}/workspace-management/config.sh"
+if [[ -n "${WSM_CONFIG:-}" ]]; then
+  CONFIG_FILE="$WSM_CONFIG"
+elif [[ -f "$SCRIPT_DIR/config.sh" ]]; then
+  CONFIG_FILE="$SCRIPT_DIR/config.sh"
+else
+  CONFIG_FILE="$_xdg_config"
+fi
 if [[ ! -f "$CONFIG_FILE" ]]; then
   printf 'ERROR: config file not found: %s\n' "$CONFIG_FILE" >&2
-  printf 'Copy config.example.sh to config.sh and edit it (or set WSM_CONFIG).\n' >&2
+  printf 'Copy config.example.sh to config.sh next to the scripts, or to\n' >&2
+  printf '  %s\n' "$_xdg_config" >&2
+  printf 'or point WSM_CONFIG at your config file.\n' >&2
   exit 1
 fi
 # shellcheck source=/dev/null

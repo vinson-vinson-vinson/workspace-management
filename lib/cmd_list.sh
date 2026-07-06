@@ -1,0 +1,149 @@
+# shellcheck shell=bash
+# -----------------------------------------------------------------------------
+# lib/cmd_list.sh — `workspaces list`: list workspaces, star the current one,
+# and link each served workspace to its admin URL.
+# -----------------------------------------------------------------------------
+
+cmd_list_usage() {
+  cat <<'USAGE'
+Usage:
+  ws list [--quiet]
+
+Lists all workspaces under the worktrees root. Each line shows the workspace
+name, and — if it is being served — a link to its admin URL. The workspace you
+are currently inside is marked with a leading '*'.
+
+Options:
+  -q, --quiet   Print only the workspace names, one per line (script-friendly).
+  -h, --help    Show this help.
+USAGE
+}
+
+# Clickable green link for a bare host+path (https:// is added here). On a
+# terminal, wraps the URL in an OSC 8 hyperlink; otherwise prints the plain URL.
+_ws_link() {
+  local url="https://$1"
+  if "$TTY"; then
+    printf '\033]8;;%s\033\\%s%s%s\033]8;;\033\\' "$url" "$C_GREEN" "$url" "$C_RESET"
+  else
+    printf '%s' "$url"
+  fi
+}
+
+# Extract a workspace's accent color (titleBar.activeBackground) from its
+# .code-workspace file. Echoes a hex like "#571f74", or nothing.
+_ws_color() {
+  local file="$ROOT_DIR/$1.code-workspace"
+  [[ -f "$file" ]] || return 0
+  grep -o '"titleBar\.activeBackground"[[:space:]]*:[[:space:]]*"#[0-9a-fA-F]\{6\}"' "$file" 2>/dev/null \
+    | grep -o '#[0-9a-fA-F]\{6\}' | head -n1
+}
+
+# Render a truecolor filled circle for a hex color (#RRGGBB), only on a terminal.
+_ws_swatch() {
+  local hex="${1#\#}"
+  [[ ${#hex} -eq 6 ]] || return 0
+  "$TTY" || return 0
+  local r=$((16#${hex:0:2})) g=$((16#${hex:2:2})) b=$((16#${hex:4:2}))
+  printf '\033[38;2;%d;%d;%dm●\033[0m' "$r" "$g" "$b"
+}
+
+# Echo a repo's current branch, or empty if none/detached.
+_ws_repo_branch() {
+  local repo="$1"
+  [[ -d "$repo/.git" ]] || return 0
+  git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true
+}
+
+# Branch label for the main workspace: one branch if both repos agree, else both
+# labeled. Empty if neither repo resolves.
+_ws_main_label() {
+  local fe be
+  fe="$(_ws_repo_branch "$FRONTEND_REPO")"
+  be="$(_ws_repo_branch "$BACKEND_REPO")"
+  if [[ -n "$fe" && "$fe" == "$be" ]]; then
+    printf '%s' "$fe"
+  elif [[ -n "$fe" || -n "$be" ]]; then
+    printf '%s:%s %s:%s' "$FRONTEND_DIR_NAME" "${fe:-?}" "$BACKEND_DIR_NAME" "${be:-?}"
+  fi
+}
+
+# Echo the admin URL for a slug if an nginx block exists, else nothing.
+_ws_admin_url() {
+  local slug="$1" sub host
+  sub="$(resolve_subdomain "$slug")" || return 0
+  host="${sub}.${BASE_DOMAIN}"
+  [[ -f "$VALET_NGINX_DIR/$host" ]] && printf '%s' "${host}${ADMIN_PATH}"
+  return 0
+}
+
+cmd_list() {
+  local quiet=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -q|--quiet) quiet=true; shift ;;
+      -h|--help)  cmd_list_usage; exit 0 ;;
+      -*) err "Unknown option: $1"; cmd_list_usage; exit 1 ;;
+      *)  err "Unexpected argument: $1"; cmd_list_usage; exit 1 ;;
+    esac
+  done
+
+  local cwd; cwd="$(pwd -P)"
+
+  # Collect workspace slugs: immediate subdirectories of the worktrees root.
+  local slugs=()
+  if [[ -d "$WORKTREES_ROOT" ]]; then
+    local entry
+    for entry in "$WORKTREES_ROOT"/*/; do
+      [[ -d "$entry" ]] || continue
+      slugs+=("$(basename "$entry")")
+    done
+  fi
+
+  # Figure out which workspace the CLI is inside. Each workspace owns a few base
+  # dirs (frontend, backend, and their parent); the LONGEST matching base wins,
+  # so a task worktree stars that task rather than MAIN (whose parent, the
+  # project root, also matches). `${slugs[@]+…}` keeps `set -u` happy when empty.
+  local -a cand_key=() cand_base=()
+  cand_key+=("MAIN"); cand_base+=("$ROOT_DIR")
+  cand_key+=("MAIN"); cand_base+=("$FRONTEND_REPO")
+  cand_key+=("MAIN"); cand_base+=("$BACKEND_REPO")
+  local slug
+  for slug in ${slugs[@]+"${slugs[@]}"}; do
+    cand_key+=("$slug"); cand_base+=("$WORKTREES_ROOT/$slug")
+  done
+
+  local current_key="" best_len=-1 i base
+  for i in "${!cand_base[@]}"; do
+    base="${cand_base[$i]}"
+    if [[ "$cwd" == "$base" || "$cwd" == "$base/"* ]] && (( ${#base} > best_len )); then
+      best_len=${#base}
+      current_key="${cand_key[$i]}"
+    fi
+  done
+
+  if "$quiet"; then
+    printf 'MAIN\n'
+    [[ ${#slugs[@]} -gt 0 ]] && printf '%s\n' "${slugs[@]}"
+    exit 0
+  fi
+
+  # Main workspace: the root repos, always served at $BASE_DOMAIN.
+  local m main_label sw
+  main_label="$(_ws_main_label)"
+  [[ "$current_key" == "MAIN" ]] && m='* ' || m='  '
+  sw="$(_ws_swatch "$(_ws_color MAIN)")"; [[ -n "$sw" ]] && sw+=' '
+  printf '%s%sMAIN %s  %s\n' "$m" "$sw" "$main_label" "$(_ws_link "${BASE_DOMAIN}${ADMIN_PATH}")"
+
+  local url
+  for slug in ${slugs[@]+"${slugs[@]}"}; do
+    [[ "$current_key" == "$slug" ]] && m='* ' || m='  '
+    url="$(_ws_admin_url "$slug")"
+    sw="$(_ws_swatch "$(_ws_color "$slug")")"; [[ -n "$sw" ]] && sw+=' '
+    if [[ -n "$url" ]]; then
+      printf '%s%s%s  %s\n' "$m" "$sw" "$slug" "$(_ws_link "$url")"
+    else
+      printf '%s%s%s\n' "$m" "$sw" "$slug"
+    fi
+  done
+}

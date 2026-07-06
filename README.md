@@ -1,6 +1,6 @@
 # workspace-management
 
-> **macOS only** (for now). The scripts rely on BSD `sed`, `open`, the `code`
+> **macOS only** (for now). It relies on BSD `sed`, `open`, the `code`
 > CLI, and Laravel Valet. Linux support isn't there yet.
 
 Bash tooling for spinning up **isolated, per-task development workspaces** out of
@@ -27,25 +27,30 @@ multi-app frontend + a Laravel/PHP backend, served through Laravel Valet), but
 **all machine- and project-specific values live in a single `config.sh`**, so it
 adapts to your own repos, branches, domain, and app layout.
 
-## Scripts
+## Commands
 
-| Script | What it does |
+Everything is one command — `workspaces` (short alias: **`ws`**) — with subcommands:
+
+| Command | What it does |
 | --- | --- |
-| `create-workspace.sh` | Create (or reopen) a workspace: adds the two worktrees, writes a `.code-workspace` file, and opens VS Code. Optionally opens a Claude Code session with `--claude`. Also `--remove`. |
-| `remove-workspace.sh` | Tear a workspace down safely: reverts routing, removes worktrees, deletes local branches, and cleans the session dir. Refuses to run on unpushed work unless `--force`. |
-| `list-workspaces.sh` | List all current workspaces, star the one you're in, and link each served workspace to its landing URL. |
-| `serve-workspace.sh` | Make a workspace reachable at `<sub>.<domain>` via Valet/nginx: copies + rewrites envs, writes an nginx block, then installs dependencies (`yarn` for the frontend, cloned vendor for the backend) and generates the Nuxt scaffolding. |
+| `ws create <slug> [opts]` | Create (or reopen) a workspace: adds the two worktrees, writes a `.code-workspace` file, and opens VS Code. Optionally opens a Claude Code session with `--claude`. |
+| `ws list` &nbsp;(or bare `ws`) | List all workspaces, star the one you're in, and link each served workspace to its landing URL. |
+| `ws serve [slug] [opts]` | Make a workspace reachable at `<sub>.<domain>` via Valet/nginx: copies + rewrites envs, writes an nginx block, installs deps (`yarn` frontend, cloned vendor backend), and generates the Nuxt scaffolding. Slug defaults to the current directory. |
+| `ws remove [slug] [opts]` | Tear a workspace down safely: reverts routing, removes worktrees, deletes local branches, cleans the session dir. Refuses on unpushed work unless `--force`. Slug defaults to the current directory. |
+| `ws help` / `ws version` | Banner + command overview / print the version. |
+
+Run `ws <command> --help` for per-command options.
 
 ## Requirements
 
-- **macOS** — required for now; the scripts use BSD `sed` (`sed -i ''`), `open`, and the `code` CLI.
+- **macOS** — required for now; it uses BSD `sed` (`sed -i ''`), `open`, and the `code` CLI.
 - **git** with worktree support.
-- **VS Code** with the `code` command on your `PATH` (for `create-workspace.sh`).
-- For `serve-workspace.sh` only: **Laravel Valet** (nginx + a wildcard cert for
-  your domain), `nginx`, and `sudo` access to reload nginx. If you don't serve
-  workspaces you can ignore this script entirely.
+- **VS Code** with the `code` command on your `PATH` (for `ws create`).
+- For `ws serve` only: **Laravel Valet** (nginx + a wildcard cert for
+  your domain), `nginx`, `yarn`, and `sudo` access to reload nginx. If you don't
+  serve workspaces you can ignore that command entirely.
 - Optional: the **Claude** desktop app, for the opt-in `claude://` deep-link
-  session that `create-workspace.sh --claude` opens.
+  session that `ws create --claude` opens.
 
 ## Setup
 
@@ -74,29 +79,29 @@ cd workspace-management
 cp config.example.sh config.sh
 $EDITOR config.sh
 
-# (optional) install the commands onto your PATH by bare name:
-#   create-workspace  remove-workspace  list-workspaces  serve-workspace
+# (optional) install the command onto your PATH — adds `workspaces` and `ws`:
 ./install.sh                 # symlinks into ~/.local/bin (override: ./install.sh ~/bin)
 ```
 
-The scripts are committed with the executable bit set, so a fresh clone can run
-them directly (`./list-workspaces.sh`) with no `chmod` needed. `install.sh` just
-symlinks them (minus the `.sh`) into a bin directory so you can call them from
-anywhere; the symlinks point back at the checkout, so `git pull` updates the
-commands in place.
+The `workspaces` command is committed executable, so a fresh clone can run it
+directly (`./workspaces help`) with no `chmod` needed. `install.sh` symlinks both
+`workspaces` and its short alias `ws` into a bin directory so you can call them
+from anywhere; the symlinks point back at the checkout, so `git pull` updates the
+command in place. (It also removes the stale `create-workspace`/`serve-workspace`/…
+symlinks from the old layout — repoint any `sws`-style shell alias to `ws serve`.)
 
-`config.sh` is gitignored, so your local paths never get committed. Every script
+`config.sh` is gitignored, so your local paths never get committed. `workspaces`
 looks for its config in this order:
 
 1. `$WSM_CONFIG`, if set (explicit override)
-2. `config.sh` next to the scripts (git-clone / `install.sh` layout)
+2. `config.sh` next to the `workspaces` command (git-clone / `install.sh` layout)
 3. `~/.config/workspace-management/config.sh` (`$XDG_CONFIG_HOME`; Homebrew layout)
 
 So a git clone keeps `config.sh` in the checkout, a brew install keeps it under
 `~/.config`, and either way you can override with `WSM_CONFIG`:
 
 ```bash
-WSM_CONFIG=~/dotfiles/wsm.config.sh ./list-workspaces.sh
+WSM_CONFIG=~/dotfiles/wsm.config.sh ws list
 ```
 
 ## Configuration
@@ -112,7 +117,7 @@ The essentials:
 | `WORKTREES_ROOT` | Where session worktrees are created. |
 | `FRONTEND_BASE_BRANCH` / `BACKEND_BASE_BRANCH` | Branch new worktrees are cut from. |
 | `TASK_ID_PREFIX` | Prefix that marks a "task" workspace (default `CU`, for ClickUp). |
-| `BASE_DOMAIN`, `ADMIN_PATH`, `PORT_RANGE_START`, `VALET_*` | `serve-workspace.sh` routing. |
+| `BASE_DOMAIN`, `ADMIN_PATH`, `PORT_RANGE_START`, `VALET_*` | `ws serve` routing. |
 | `APPS`, `DEFAULT_APPS` | Frontend app registry (`key:dir:route:port-offset`). |
 
 ### Task vs. plain workspaces
@@ -137,39 +142,39 @@ form — it no longer gates which workspaces may be served or removed.
 
 ```bash
 # Create a task workspace (adds worktrees, opens VS Code)
-./create-workspace.sh CU-1234_my-feature
+ws create CU-1234_my-feature
 
 # Also open a Claude Code session (opt-in); or just preview
-./create-workspace.sh CU-1234_my-feature --claude
-./create-workspace.sh CU-1234_my-feature --dry-run
+ws create CU-1234_my-feature --claude
+ws create CU-1234_my-feature --dry-run
 
-# List everything (the workspace you're in is starred)
-./list-workspaces.sh
+# List everything (the workspace you're in is starred); bare `ws` also lists
+ws
+ws list --quiet
 
-# Serve a task workspace at https://cu-1234.<domain>
-cd worktrees/CU-1234_my-feature && ../../workspace-management/serve-workspace.sh
-serve-workspace.sh CU-1234_my-feature --all-apps      # every app in the registry
+# Serve at https://cu-1234.<domain> — from inside the worktree, no slug needed
+cd worktrees/CU-1234_my-feature && ws serve
+ws serve CU-1234_my-feature --all-apps                # every app in the registry
 
 # Tear it down (auto-detects the slug from your cwd inside the worktree)
-./remove-workspace.sh                                 # safe: refuses on unpushed work
-./remove-workspace.sh CU-1234_my-feature --force      # discard local-only work
+ws remove                                             # safe: refuses on unpushed work
+ws remove CU-1234_my-feature --force                  # discard local-only work
 ```
 
-Most commands accept `--dry-run` to print actions without executing them, and
-`-h`/`--help` for full option lists. `serve-workspace.sh` does **not** start the
-dev servers — it prints the `yarn serve-*` commands for you to run.
+Every subcommand accepts `--dry-run` to print actions without executing them, and
+`-h`/`--help` for full option lists. `ws serve` does **not** start the dev
+servers — it prints the `yarn serve-*` commands for you to run.
 
 ## How it fits together
 
-1. `create-workspace.sh` cuts matching branches in both repos into a shared
-   session directory and opens it.
-2. `serve-workspace.sh` (optional) copies each repo's env into the worktree,
-   rewrites only the self-domain and dev-server ports (DB, keys, and shared
-   infra keep pointing at your main setup), and adds an nginx block so the whole
-   workspace answers on one subdomain.
-3. `list-workspaces.sh` shows what's live and where.
-4. `remove-workspace.sh` reverses all of it, with guards against losing unpushed
-   work.
+1. `ws create` cuts matching branches in both repos into a shared session
+   directory and opens it.
+2. `ws serve` (optional) copies each repo's env into the worktree, rewrites only
+   the self-domain and dev-server ports (DB, keys, and shared infra keep pointing
+   at your main setup), and adds an nginx block so the whole workspace answers on
+   one subdomain.
+3. `ws list` shows what's live and where.
+4. `ws remove` reverses all of it, with guards against losing unpushed work.
 
 ## License
 

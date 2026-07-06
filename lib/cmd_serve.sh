@@ -1,106 +1,25 @@
-#!/usr/bin/env bash
-
-set -euo pipefail
-
+# shellcheck shell=bash
 # -----------------------------------------------------------------------------
-# serve-workspace.sh
+# lib/cmd_serve.sh — `workspaces serve`: make a worktree reachable at its own
+# subdomain (<sub>.$BASE_DOMAIN) via Valet/nginx, serving BOTH the worktree
+# frontend (Nuxt dev servers) and backend (Laravel) under one host. The backend
+# reuses the MAIN database; only the self-domain and dev-server ports change.
 #
-# Makes a task worktree (created by create-workspace.sh) reachable in the
-# browser under its own subdomain, e.g. https://cu-1234.anny.dev, serving BOTH
-# the worktree frontend (Nuxt dev servers) and the worktree backend (Laravel)
-# under that one host. The backend reuses the MAIN database and all main env
-# values; only the self-domain and the dev-server ports are rewritten.
-#
-# What this script does:
+# What it does:
 #   1. Copies + rewrites the frontend/backend .env files into the worktree.
-#   2. Writes an nginx server block for <sub>.anny.dev (reusing the wildcard
-#      *.anny.dev cert) and reloads nginx.
-#   3. Sets up dependencies (frontend `yarn` install, backend vendor cloned),
-#      generates the Nuxt scaffolding, and seeds the backend's Cognitor JWT
-#      public key — last, so it only runs after everything else succeeded.
-#
+#   2. Writes an nginx server block for <sub>.$BASE_DOMAIN and reloads nginx.
+#   3. Installs deps (frontend `yarn`, backend vendor clone), generates the Nuxt
+#      scaffolding, seeds the backend's Cognitor JWT key — last.
 # It does NOT run the `yarn serve-*` commands — that is left to you.
 # -----------------------------------------------------------------------------
 
-# Load configuration (see config.example.sh). Resolution order:
-#   1. $WSM_CONFIG                                     (explicit override)
-#   2. config.sh next to the script                   (git clone / install.sh)
-#   3. $XDG_CONFIG_HOME/workspace-management/config.sh (Homebrew / packaged)
-# Resolve this script's real dir following symlinks so a sibling config.sh is
-# found even when the command is symlinked onto your PATH (install.sh / brew).
-_src="${BASH_SOURCE[0]}"
-while [[ -h "$_src" ]]; do
-  _dir="$(cd -P "$(dirname "$_src")" && pwd)"
-  _src="$(readlink "$_src")"
-  [[ "$_src" != /* ]] && _src="$_dir/$_src"
-done
-SCRIPT_DIR="$(cd -P "$(dirname "$_src")" && pwd)"
-_xdg_config="${XDG_CONFIG_HOME:-$HOME/.config}/workspace-management/config.sh"
-if [[ -n "${WSM_CONFIG:-}" ]]; then
-  CONFIG_FILE="$WSM_CONFIG"
-elif [[ -f "$SCRIPT_DIR/config.sh" ]]; then
-  CONFIG_FILE="$SCRIPT_DIR/config.sh"
-else
-  CONFIG_FILE="$_xdg_config"
-fi
-if [[ ! -f "$CONFIG_FILE" ]]; then
-  printf 'ERROR: config file not found: %s\n' "$CONFIG_FILE" >&2
-  printf 'Copy config.example.sh to config.sh next to the scripts, or to\n' >&2
-  printf '  %s\n' "$_xdg_config" >&2
-  printf 'or point WSM_CONFIG at your config file.\n' >&2
-  exit 1
-fi
-# shellcheck source=/dev/null
-source "$CONFIG_FILE"
-
-# Lowercased task-id prefix, used for case-insensitive slug matching.
-TASK_ID_PREFIX_LC="$(printf '%s' "$TASK_ID_PREFIX" | tr '[:upper:]' '[:lower:]')"
-
-# Dots escaped so BASE_DOMAIN can be dropped into the env-rewriting sed regexes.
-BASE_DOMAIN_RE="${BASE_DOMAIN//./\\.}"
-
-DRY_RUN=false
-ALL_APPS=false
-VERBOSE=false
-FORCE=false
-INPUT_SLUG=""
-
-# ------------------------------ app registry --------------------------------
-# The registry lives in config.sh as APPS=("key:dir:route:offset" …) and
-# DEFAULT_APPS=(…). To add an app: append an entry to APPS. Only apps with a
-# matching .env (or .env.example) actually get served.
-
-# Look up field N (2=dir, 3=route, 4=offset) for an app key in the APPS registry.
-app_field() {
-  local key="$1" idx="$2" entry
-  for entry in "${APPS[@]}"; do
-    if [[ "${entry%%:*}" == "$key" ]]; then
-      printf '%s' "$entry" | cut -d: -f"$idx"
-      return 0
-    fi
-  done
-  return 1
-}
-
-app_dir()    { app_field "$1" 2; }  # frontend directory under the frontend repo
-app_route()  { app_field "$1" 3; }  # nginx location prefix
-app_offset() { app_field "$1" 4; }  # port offset within the per-workspace block
-
-# Every app key defined in the registry, one per line.
-all_app_keys() {
-  local entry
-  for entry in "${APPS[@]}"; do printf '%s\n' "${entry%%:*}"; done
-}
-
-# ------------------------------- helpers ------------------------------------
-print_usage() {
+cmd_serve_usage() {
   cat <<'USAGE'
 Usage:
-  serve-workspace.sh [SLUG] [--all-apps] [--dry-run]
+  ws serve [SLUG] [--all-apps] [--force] [--dry-run] [-v]
 
 Arguments:
-  SLUG        The workspace slug (e.g. CU-1234_my-feature). If omitted,
-              auto-detects from the current working directory.
+  SLUG        Workspace slug. If omitted, auto-detects from the current directory.
 
 Options:
   --all-apps    Serve every known app (admin, shop, account, panels, outlook)
@@ -123,90 +42,31 @@ Notes:
 USAGE
 }
 
-log()  { printf '[serve] %s\n' "$*"; }
-err()  { printf '[serve] ERROR: %s\n' "$*" >&2; }
-warn() { printf '[serve] WARN: %s\n' "$*" >&2; }
-
-run_cmd() {
-  if "$DRY_RUN"; then printf '[dry-run] %s\n' "$*"; else "$@"; fi
-}
-
-require_command() {
-  command -v "$1" >/dev/null 2>&1 || { err "Required command not found: $1"; exit 1; }
-}
-
-parse_args() {
-  local positional=()
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --all-apps)   ALL_APPS=true; shift ;;
-      --force)      FORCE=true; shift ;;
-      --dry-run)    DRY_RUN=true; shift ;;
-      -v|--verbose) VERBOSE=true; shift ;;
-      -h|--help)    print_usage; exit 0 ;;
-      -*)           err "Unknown option: $1"; print_usage; exit 1 ;;
-      *)            positional+=("$1"); shift ;;
-    esac
+# ------------------------------ app registry --------------------------------
+# The registry lives in config.sh as APPS=("key:dir:route:offset" …) and
+# DEFAULT_APPS=(…). Only apps with a matching .env (or .env.example) get served.
+app_field() {
+  local key="$1" idx="$2" entry
+  for entry in "${APPS[@]}"; do
+    if [[ "${entry%%:*}" == "$key" ]]; then
+      printf '%s' "$entry" | cut -d: -f"$idx"
+      return 0
+    fi
   done
-  if [[ ${#positional[@]} -gt 1 ]]; then
-    err "Expected at most one positional argument (slug)."; exit 1
-  fi
-  # NB: use an if-block (not `[[ … ]] && …`) so the function never returns a
-  # non-zero status as its last command, which would trip `set -e` in main.
-  if [[ ${#positional[@]} -eq 1 ]]; then
-    INPUT_SLUG="${positional[0]}"
-  fi
+  return 1
 }
+app_dir()    { app_field "$1" 2; }  # frontend directory under the frontend repo
+app_route()  { app_field "$1" 3; }  # nginx location prefix
+app_offset() { app_field "$1" 4; }  # port offset within the per-workspace block
 
-detect_slug_from_cwd() {
-  local cwd="$PWD"
-  if [[ "$cwd" != "$WORKTREES_ROOT/"* ]]; then
-    err "Not inside a worktree directory and no slug provided."
-    err "Expected a path under: $WORKTREES_ROOT/"
-    exit 1
-  fi
-  local relative="${cwd#"$WORKTREES_ROOT/"}"
-  INPUT_SLUG="${relative%%/*}"
-  log "Auto-detected slug from CWD: $INPUT_SLUG"
-}
-
-# Derive a DNS-safe subdomain label from the slug. For a task workspace
-# (CU-1234_feature) this is the task id (cu-1234); for a plain workspace it's the
-# whole slug (admin-test -> admin-test). Any character that isn't DNS-label-safe
-# is lowercased and collapsed to a hyphen, so EVERY workspace name yields a
-# usable subdomain.
-resolve_subdomain() {
-  local slug="$1"
-  local sub
-  sub="$(printf '%s' "${slug%%_*}" | tr '[:upper:]' '[:lower:]')"
-  sub="$(printf '%s' "$sub" | sed -E 's/[^a-z0-9-]+/-/g; s/-+/-/g; s/^-+//; s/-+$//')"
-  if [[ -z "$sub" ]]; then
-    err "Refusing to serve '$slug': no DNS-safe characters to build a subdomain from."
-    exit 1
-  fi
-  printf '%s' "$sub"
-}
-
-# The branch a worktree currently has checked out (empty if detached/unknown).
-worktree_branch() {
-  git -C "$1" symbolic-ref --quiet --short HEAD 2>/dev/null || true
-}
-
-# True if BRANCH is one of the protected base ("main") branches. Serving rewrites
-# env files and nginx routing; doing that against a main checkout would clobber
-# your main setup's envs, so we never serve one.
-is_protected_branch() {
-  local branch="$1"
-  [[ -n "$branch" ]] || return 1
-  case "$branch" in
-    "$FRONTEND_BASE_BRANCH"|"$BACKEND_BASE_BRANCH"|main|master) return 0 ;;
-    *) return 1 ;;
-  esac
+all_app_keys() {
+  local entry
+  for entry in "${APPS[@]}"; do printf '%s\n' "${entry%%:*}"; done
 }
 
 # Deterministic per-workspace port block base, derived from the subdomain so the
-# same task always maps to the same ports (idempotent) and different tasks get
-# different blocks (so several workspaces can run at once).
+# same task always maps to the same ports and different tasks get different
+# blocks (so several workspaces can run at once).
 compute_port_base() {
   local key="$1" h
   h="$(printf '%s' "$key" | cksum | cut -d' ' -f1)"
@@ -226,10 +86,10 @@ set_env_var() {
 }
 
 # --------------------------- env preparation --------------------------------
-# Copy the ENTIRE main env, then rewrite the self-domain (anny.dev -> subdomain)
-# and the dev-server port. Shared infra (socket.anny.dev, cognitor.dev,
-# anny.co, DB, APP_KEY, mail, …) is left pointing at main. ECHO_HOST_URL is left
-# untouched so realtime keeps using the shared soketi on the main host.
+# Copy the ENTIRE main env, then rewrite the self-domain and dev-server port.
+# Shared infra (socket.anny.dev, cognitor.dev, anny.co, DB, APP_KEY, mail, …) is
+# left pointing at main. ECHO_HOST_URL is untouched so realtime keeps using the
+# shared soketi on the main host.
 prepare_frontend_env() {
   local app_key="$1" host="$2"
   local dir port main_env wt_env
@@ -238,33 +98,26 @@ prepare_frontend_env() {
   main_env="$FRONTEND_REPO/$dir/.env"
   wt_env="$WT_FRONTEND/$dir/.env"
 
-  # This worktree's branch may not contain every app that exists on main.
   if [[ ! -d "$WT_FRONTEND/$dir" ]]; then
     warn "App '$dir' does not exist in this worktree — skipping app '$app_key'."
     return 1
   fi
-
-  # Idempotent: keep an existing worktree env (and any manual edits) unless --force.
   if [[ -f "$wt_env" ]] && ! "$FORCE"; then
     log "Frontend env already present: $dir/.env (keeping existing; use --force to regenerate)."
     return 0
   fi
-
   if [[ ! -f "$main_env" ]]; then
     main_env="$FRONTEND_REPO/$dir/.env.example"
     [[ -f "$main_env" ]] || { warn "No .env or .env.example for $dir — skipping app '$app_key'."; return 1; }
     warn "$dir has no .env; falling back to .env.example."
   fi
-
   if "$DRY_RUN"; then
     printf '[dry-run] cp %s %s ; set PORT=%s ; rewrite host -> %s\n' "$main_env" "$wt_env" "$port" "$host"
     return 0
   fi
-
   cp "$main_env" "$wt_env"
   set_env_var "$wt_env" HOST "127.0.0.1"
   set_env_var "$wt_env" PORT "$port"
-  # Rewrite the self-domain everywhere except the realtime host (ECHO_HOST_URL).
   sed -i '' -E "/^ECHO_HOST_URL=/!s#https://${BASE_DOMAIN_RE}#https://${host}#g" "$wt_env"
   log "Frontend env ready: $dir (.env, PORT=$port, host=$host)"
   return 0
@@ -275,29 +128,22 @@ prepare_backend_env() {
   local main_env="$BACKEND_REPO/.env"
   local wt_env="$WT_BACKEND/.env"
   [[ -f "$main_env" ]] || { err "Main backend .env not found: $main_env"; exit 1; }
-
-  # Idempotent: keep an existing worktree env (and any manual edits) unless --force.
   if [[ -f "$wt_env" ]] && ! "$FORCE"; then
     log "Backend env already present (keeping existing; use --force to regenerate)."
     return 0
   fi
-
   if "$DRY_RUN"; then
     printf '[dry-run] cp %s %s ; rewrite APP_URL/CLIENT_URLs host -> %s (DB + rest kept)\n' "$main_env" "$wt_env" "$host"
     return 0
   fi
-
   cp "$main_env" "$wt_env"
-  # Self-domain -> subdomain (APP_URL, *_CLIENT_URL, OUTLOOK_ADD_IN_BASE_URL, …).
-  # DB_*, APP_KEY, socket.anny.dev, cognitor.dev, anny.co, mail, etc. are untouched.
   sed -i '' -E "s#https://${BASE_DOMAIN_RE}#https://${host}#g" "$wt_env"
   log "Backend env ready: reuses main DB, APP_URL=https://${host}"
 }
 
 # ------------------------------ nginx block ---------------------------------
 # NOTE: built with printf / plain (uncaptured) heredocs on purpose — macOS ships
-# bash 3.2, whose parser mishandles heredocs nested inside $(...) command
-# substitution, so we never capture a heredoc into a variable here.
+# bash 3.2, whose parser mishandles heredocs nested inside $(...) substitution.
 emit_frontend_location() {
   local route="$1" port="$2"
   printf '%s\n' \
@@ -313,11 +159,10 @@ emit_frontend_location() {
 "    }"
 }
 
-# Render the full nginx server block to stdout (never captured into a var).
 render_nginx_block() {
   local host="$1" locations="$2"
   cat <<EOF
-# Managed by serve-workspace.sh — task workspace ${host}
+# Managed by \`ws serve\` — task workspace ${host}
 # Frontend paths proxy to the worktree Nuxt dev servers; everything else is the
 # worktree Laravel backend (served via valet php-fpm, sharing the main DB).
 server {
@@ -364,25 +209,8 @@ ${locations}
 EOF
 }
 
-# Run an nginx command, hiding its (noisy, valet-wide) deprecation warnings on
-# success. Output is shown only with --verbose, or always when the command fails.
-run_nginx() {
-  local out status=0
-  # `|| status=$?` keeps `set -e` from aborting on a failed nginx command, so we
-  # can print its captured output ourselves before returning the error.
-  out="$(sudo nginx "$@" 2>&1)" || status=$?
-  if [[ $status -ne 0 ]]; then
-    printf '%s\n' "$out" >&2
-    return "$status"
-  fi
-  if "$VERBOSE"; then
-    printf '%s\n' "$out"
-  fi
-  return 0
-}
-
-# Idempotent: write the nginx block and reload ONLY when its content changed
-# (or --force). An unchanged re-run touches nothing and needs no sudo/reload.
+# Idempotent: write the nginx block and reload ONLY when its content changed (or
+# --force). An unchanged re-run touches nothing and needs no sudo/reload.
 ensure_nginx() {
   local host="$1"; shift
   local -a apps=("$@")
@@ -412,7 +240,6 @@ ensure_nginx() {
   printf '%s\n' "$expected" >"$conf"
   log "Wrote nginx block: $conf"
 
-  # Reload needs sudo — only prompted here, i.e. only when something changed.
   log "Requesting sudo (needed to reload nginx)…"
   sudo -v || { err "sudo is required to reload nginx."; exit 1; }
   run_nginx -t || { err "nginx config test failed — not reloading."; exit 1; }
@@ -426,8 +253,7 @@ setup_dependencies() {
 
   # Copy the gitignored root yarn env FIRST — .yarnrc.yml resolves private
   # registry tokens (ANNY_NPM_TOKEN, FONTAWESOME_NPM_TOKEN) from it, and Yarn 4
-  # auto-loads .env.yarn, so every yarn command (the `yarn` install below and the
-  # `yarn serve-*` you run later) needs it present.
+  # auto-loads .env.yarn, so every yarn command needs it present.
   if [[ -f "$FRONTEND_REPO/.env.yarn" && ! -f "$WT_FRONTEND/.env.yarn" ]]; then
     run_cmd cp "$FRONTEND_REPO/.env.yarn" "$WT_FRONTEND/.env.yarn"
   fi
@@ -436,8 +262,7 @@ setup_dependencies() {
   # node_modules from the main repo — a symlink is confusing (stack traces point
   # back at the main clone) and couples the worktree to main. Yarn's postinstall
   # (nuxi prepare) also generates the root .nuxt that every app's tsconfig
-  # extends. Install once; a re-run skips if node_modules already exists (run
-  # `yarn` in the worktree yourself to refresh after changing dependencies).
+  # extends. Install once; a re-run skips if node_modules already exists.
   if [[ -d "$WT_FRONTEND/node_modules" ]]; then
     log "Frontend node_modules already present (skipping yarn — run 'yarn' in the worktree to refresh)."
   else
@@ -445,10 +270,9 @@ setup_dependencies() {
     run_cmd bash -c "cd '$WT_FRONTEND' && yarn"
   fi
 
-  # Backend: CLONE vendor (copy-on-write) rather than symlink. A symlinked
-  # vendor makes Composer's autoloader resolve its base dir to the MAIN repo
-  # (PHP realpaths __DIR__), so the worktree would run main's backend code.
-  # (Run `composer install` in the worktree yourself if you need fresh vendor.)
+  # Backend: CLONE vendor (copy-on-write) rather than symlink. A symlinked vendor
+  # makes Composer's autoloader resolve its base dir to the MAIN repo (PHP
+  # realpaths __DIR__), so the worktree would run main's backend code.
   if [[ -e "$WT_BACKEND/vendor" ]]; then
     log "vendor already present in worktree (skipping)."
   elif "$DRY_RUN"; then
@@ -461,13 +285,10 @@ setup_dependencies() {
 
   # Generate the Nuxt scaffolding the worktree needs. Every app's root
   # tsconfig.json does `extends: ./.nuxt/tsconfig.json`, a file produced by
-  # `nuxi prepare`. The `yarn` above runs it via postinstall for the ROOT, but
-  # only for the root — `yarn serve-*` (nuxi dev) then generates each app's own
-  # .nuxt, but not necessarily before the first request. And when node_modules
-  # was already present we skip `yarn` entirely, so nothing regenerated .nuxt.
-  # Missing .nuxt makes Vite 500 ("failed to resolve extends ./.nuxt/…"), so we
-  # prepare the root and each served app here, guarded on the generated tsconfig
-  # so re-runs are cheap.
+  # `nuxi prepare`. `yarn`'s postinstall runs it for the ROOT only; nuxi dev
+  # generates each app's own .nuxt but not necessarily before the first request,
+  # and a skipped `yarn` regenerates nothing. Missing .nuxt makes Vite 500, so we
+  # prepare the root and each served app here, guarded on the generated tsconfig.
   local nuxi="$WT_FRONTEND/node_modules/.bin/nuxi"
   if [[ ! -e "$nuxi" ]]; then
     warn "nuxi not found in worktree node_modules — skipping Nuxt prepare (run 'yarn' in $WT_FRONTEND)."
@@ -495,10 +316,9 @@ setup_dependencies() {
 
   # Seed the backend's Cognitor JWT public key. The backend verifies
   # Cognitor-issued tokens (via anny/laravel-jwt-guard) against
-  # storage/cognitor-public.key. It's a generated secret that lives outside git,
-  # so a fresh worktree doesn't get it — without it file_get_contents() throws,
-  # every authenticated request 500s, and the frontend's auth retry trips a 503.
-  # Copy it from the main backend so worktree auth works out of the box.
+  # storage/cognitor-public.key — a generated secret outside git. Without it
+  # file_get_contents() throws, every authenticated request 500s, and the
+  # frontend's auth retry trips a 503. Copy it from the main backend.
   local cog_key="storage/cognitor-public.key"
   if [[ ! -f "$BACKEND_REPO/$cog_key" ]]; then
     warn "Main backend missing $cog_key — worktree Cognitor JWT verification will 500."
@@ -521,9 +341,29 @@ setup_dependencies() {
   fi
 }
 
-# --------------------------------- main -------------------------------------
-main() {
-  parse_args "$@"
+cmd_serve() {
+  DRY_RUN=false
+  ALL_APPS=false
+  VERBOSE=false
+  FORCE=false
+  local slug="" positional=()
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --all-apps)   ALL_APPS=true; shift ;;
+      --force)      FORCE=true; shift ;;
+      --dry-run)    DRY_RUN=true; shift ;;
+      -v|--verbose) VERBOSE=true; shift ;;
+      -h|--help)    cmd_serve_usage; exit 0 ;;
+      -*) err "Unknown option: $1"; cmd_serve_usage; exit 1 ;;
+      *)  positional+=("$1"); shift ;;
+    esac
+  done
+
+  if [[ ${#positional[@]} -gt 1 ]]; then
+    err "Expected at most one positional argument (slug)."; exit 1
+  fi
+  [[ ${#positional[@]} -eq 1 ]] && slug="${positional[0]}"
 
   require_command git
   require_command sed
@@ -532,13 +372,23 @@ main() {
   require_command yarn
 
   [[ -f "$VALET_CERT" && -f "$VALET_CERT_KEY" ]] \
-    || { err "Wildcard cert not found ($VALET_CERT). Is anny.dev secured in Valet?"; exit 1; }
+    || { err "Wildcard cert not found ($VALET_CERT). Is $BASE_DOMAIN secured in Valet?"; exit 1; }
 
-  [[ -z "$INPUT_SLUG" ]] && detect_slug_from_cwd
+  if [[ -z "$slug" ]]; then
+    slug="$(slug_from_cwd)" || {
+      err "Not inside a worktree directory and no slug provided."
+      err "Expected a path under: $WORKTREES_ROOT/"
+      exit 1
+    }
+    log "Auto-detected slug from CWD: $slug"
+  fi
 
-  local slug="$INPUT_SLUG"
+  # Dots escaped so BASE_DOMAIN can be dropped into the env-rewriting sed regexes.
+  BASE_DOMAIN_RE="${BASE_DOMAIN//./\\.}"
+
   local sub host session_dir
-  sub="$(resolve_subdomain "$slug")"
+  sub="$(resolve_subdomain "$slug")" \
+    || { err "Refusing to serve '$slug': no DNS-safe characters to build a subdomain from."; exit 1; }
   host="${sub}.${BASE_DOMAIN}"
 
   session_dir="$WORKTREES_ROOT/$slug"
@@ -546,17 +396,16 @@ main() {
   WT_BACKEND="$session_dir/$BACKEND_DIR_NAME"
 
   [[ -d "$WT_FRONTEND" && -d "$WT_BACKEND" ]] \
-    || { err "Worktree not found for '$slug'. Run create-workspace.sh first."; exit 1; }
+    || { err "Worktree not found for '$slug'. Run 'ws create' first."; exit 1; }
 
   # SAFETY: never serve — and thus never overwrite envs or nginx routing — a
-  # worktree that is sitting on a protected base branch. That would be your main
-  # setup, not a task workspace.
+  # worktree sitting on a protected base branch. That would be your main setup.
   local fe_branch be_branch
   fe_branch="$(worktree_branch "$WT_FRONTEND")"
   be_branch="$(worktree_branch "$WT_BACKEND")"
   if is_protected_branch "$fe_branch" || is_protected_branch "$be_branch"; then
     err "Refusing to serve '$slug': worktree is on a protected branch (frontend='$fe_branch', backend='$be_branch')."
-    err "serve-workspace rewrites env files and nginx routing; it will not touch a main/base checkout."
+    err "serve rewrites env files and nginx routing; it will not touch a main/base checkout."
     exit 1
   fi
 
@@ -607,7 +456,5 @@ main() {
     printf '    cd %q && yarn serve-%s\n' "$WT_FRONTEND" "$app"
   done
   log ""
-  log "Tear it all down again with: remove-workspace.sh $slug"
+  log "Tear it all down again with: ws remove $slug"
 }
-
-main "$@"

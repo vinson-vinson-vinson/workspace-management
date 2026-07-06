@@ -4,13 +4,17 @@
 # `Formula/workspace-management.rb` (see PACKAGING.md). When you cut a release,
 # bump `tag`/`revision`/`version` here, then copy this file into the tap.
 #
-# Source repo is private, so `url` uses git (not a release tarball): Homebrew
-# clones it with the user's own git credentials, which is what you want for an
-# internal tool.
+# Source repo is private, so `url` uses git over SSH (not a release tarball):
+# Homebrew shells out to `git`, which clones with each user's own SSH key. No
+# token is embedded and nothing secret is committed — access rides entirely on
+# the teammate's existing GitHub SSH access. (`brew audit --strict` prefers an
+# HTTPS URL, but that convention targets public homebrew-core submissions and is
+# irrelevant for a private, all-SSH tap.) `homepage` stays HTTPS: it's just a
+# clickable link, never cloned.
 class WorkspaceManagement < Formula
   desc "Per-task git worktree dev workspaces with subdomain serving (macOS/Valet)"
   homepage "https://github.com/vinson-vinson-vinson/workspace-management"
-  url "https://github.com/vinson-vinson-vinson/workspace-management.git",
+  url "git@github.com:vinson-vinson-vinson/workspace-management.git",
       using:    :git,
       tag:      "v0.1.0",
       revision: "14971d9eed4960b507575f486f8dda5934a21108"
@@ -18,29 +22,20 @@ class WorkspaceManagement < Formula
   license "MIT"
 
   # Install the newest main with:  brew install --HEAD <tap>/workspace-management
-  head "https://github.com/vinson-vinson-vinson/workspace-management.git", branch: "main"
+  head "git@github.com:vinson-vinson-vinson/workspace-management.git", branch: "main"
 
   depends_on :macos
   depends_on "git"
 
   def install
-    scripts = %w[
-      create-workspace.sh
-      remove-workspace.sh
-      list-workspaces.sh
-      serve-workspace.sh
-    ]
+    # The dispatcher resolves its own real dir (symlink-following) to find lib/,
+    # so `workspaces` + lib/ live together in libexec and both command names are
+    # symlinked onto PATH pointing back here.
+    libexec.install "workspaces", "lib"
+    bin.install_symlink libexec/"workspaces" => "workspaces"
+    bin.install_symlink libexec/"workspaces" => "ws"
 
-    # The scripts stay together in libexec (they resolve their real dir via
-    # symlink-following, so a bin/ symlink still points them back here). Each is
-    # exposed on PATH under its name minus the `.sh`.
-    libexec.install scripts
-    scripts.each do |s|
-      cmd = s.sub(/\.sh$/, "")
-      bin.install_symlink libexec/s => cmd
-    end
-
-    # A packaged install has no writable config.sh next to the scripts, so ship
+    # A packaged install has no writable config.sh next to the command, so ship
     # the template somewhere users can copy it from (see caveats).
     pkgshare.install "config.example.sh"
   end
@@ -54,20 +49,21 @@ class WorkspaceManagement < Formula
            "${XDG_CONFIG_HOME:-$HOME/.config}/workspace-management/config.sh"
         $EDITOR "${XDG_CONFIG_HOME:-$HOME/.config}/workspace-management/config.sh"
 
-      The commands find that file automatically. To keep it elsewhere, point
+      Then run:  ws help
+
+      `ws` finds that config automatically. To keep it elsewhere, point
       WSM_CONFIG at it.
 
-      Runtime tools NOT installed by brew (checked at runtime by the scripts):
-        - Laravel Valet (nginx + a wildcard cert)  — only for serve-workspace
+      Runtime tools NOT installed by brew (checked at runtime):
+        - Laravel Valet (nginx + a wildcard cert)  — only for `ws serve`
         - the `code` CLI  (VS Code → "Shell Command: Install 'code' command")
         - yarn  (frontend dependency installs)
     EOS
   end
 
   test do
-    # Sourcing config happens at load time, so point at the shipped template and
-    # assert the usage banner prints. --help exits 0.
-    ENV["WSM_CONFIG"] = "#{pkgshare}/config.example.sh"
-    assert_match "Usage", shell_output("#{bin}/create-workspace --help")
+    # `ws help` / --version need no config, so they're the cleanest smoke test.
+    assert_match "WORKSPACE MANAGEMENT", shell_output("#{bin}/workspaces help")
+    assert_match version.to_s, shell_output("#{bin}/ws --version")
   end
 end

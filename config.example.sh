@@ -6,9 +6,9 @@
 #
 #     cp config.example.sh config.sh
 #
-# `config.sh` is gitignored so your local paths never get committed. Every
-# script (create/remove/list/serve) sources this file. You can also point the
-# scripts at a config elsewhere by exporting WSM_CONFIG=/path/to/config.sh.
+# `config.sh` is gitignored so your local paths never get committed. The
+# `workspaces` command (all subcommands) sources this file. You can also point
+# it at a config elsewhere by exporting WSM_CONFIG=/path/to/config.sh.
 # -----------------------------------------------------------------------------
 
 # Root that holds your two repos and the worktrees/ directory.
@@ -38,15 +38,15 @@ BACKEND_BASE_BRANCH="main"
 # "don't touch a main/base checkout" branch check. Case-insensitive.
 TASK_ID_PREFIX="CU"
 
-# Whether create-workspace also opens a Claude Code session (Claude desktop app)
+# Whether `ws create` also opens a Claude Code session (Claude desktop app)
 # rooted at the new session dir. Off by default; --claude enables it per-run.
 # Set to true here if you want a Claude session opened for every workspace.
 OPEN_CLAUDE_DEFAULT=false
 
-# --------------------------- serving (serve-workspace) -----------------------
-# serve-workspace makes a task worktree reachable at <sub>.$BASE_DOMAIN using
-# Laravel Valet's nginx + wildcard cert. If you don't use serve-workspace you
-# can leave this section at its defaults.
+# ------------------------------ serving (ws serve) ---------------------------
+# `ws serve` makes a task worktree reachable at <sub>.$BASE_DOMAIN using Laravel
+# Valet's nginx + wildcard cert. If you don't use `ws serve` you can leave this
+# section at its defaults.
 
 # Workspaces are served at <sub>.$BASE_DOMAIN. For a task workspace <sub> is the
 # lowercased task id (cu-1234.anny.test); for any other name it's the whole slug

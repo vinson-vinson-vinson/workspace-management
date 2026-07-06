@@ -18,8 +18,8 @@ create, no build step. The whole thing is two git repos:
 | `homebrew-tap` (new, you create it) | one formula file pointing at releases of this repo | private |
 
 The formula (`packaging/workspace-management.rb` here) is the recipe: "clone this
-tag, drop the scripts in, link them onto PATH." The canonical copy lives in this
-repo; the *live* copy lives in the tap.
+tag, drop the `workspaces` command + `lib/` in, link `workspaces` and `ws` onto
+PATH." The canonical copy lives in this repo; the *live* copy lives in the tap.
 
 ---
 
@@ -76,9 +76,12 @@ brew tap vinson-vinson-vinson/tap git@github.com:vinson-vinson-vinson/homebrew-t
 brew install vinson-vinson-vinson/tap/workspace-management
 ```
 
-The source repo is private too — the formula clones it over git, so each person
-needs read access to `workspace-management` (SSH key on GitHub). That's the only
-auth requirement; there are no tokens to distribute.
+The source repo is private too — the formula's `url` is an SSH git URL
+(`git@github.com:…`), so Homebrew clones it with each person's own SSH key. Each
+teammate just needs read access to **both** repos (the tap and
+`workspace-management`) and a working SSH key on GitHub. That's the only auth
+requirement: no tokens to distribute, nothing secret committed, and no per-machine
+git config to set up (the whole team is on SSH, so the SSH URL "just works").
 
 Then the one-time config step Homebrew prints in its caveats:
 
@@ -87,6 +90,13 @@ mkdir -p ~/.config/workspace-management
 cp "$(brew --prefix)/share/workspace-management/config.example.sh" \
    ~/.config/workspace-management/config.sh
 $EDITOR ~/.config/workspace-management/config.sh
+```
+
+Then check it works:
+
+```bash
+ws help        # colorful banner + command overview
+ws list        # smoke test against your config
 ```
 
 ---

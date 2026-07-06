@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# -----------------------------------------------------------------------------
+# workspaces — unified CLI for per-task git-worktree dev workspaces.
+#
+# Thin dispatcher: resolves its lib dir, loads shared helpers (lib/common.sh),
+# and routes to a subcommand implementation in lib/cmd_<name>.sh. `ws` is the
+# short alias (a second name for this same file; see install.sh / the formula).
+#
+#   workspaces <command> [options]      (or: ws <command> [options])
+#   workspaces                          -> list  (bare command = list)
+#   workspaces help | --help            -> banner + command overview
+#   workspaces version | --version      -> version
+# -----------------------------------------------------------------------------
+
+# Resolve this script's real dir (follow symlinks) so lib/ and a sibling
+# config.sh are found even when `workspaces`/`ws` is symlinked onto your PATH
+# (install.sh / Homebrew).
+_src="${BASH_SOURCE[0]}"
+while [[ -h "$_src" ]]; do
+  _dir="$(cd -P "$(dirname "$_src")" && pwd)"
+  _src="$(readlink "$_src")"
+  [[ "$_src" != /* ]] && _src="$_dir/$_src"
+done
+WSM_HOME="$(cd -P "$(dirname "$_src")" && pwd)"
+LIB_DIR="$WSM_HOME/lib"
+
+if [[ ! -f "$LIB_DIR/common.sh" ]]; then
+  printf 'ERROR: library not found: %s\n' "$LIB_DIR/common.sh" >&2
+  printf 'The workspaces install looks incomplete (missing lib/).\n' >&2
+  exit 1
+fi
+
+# shellcheck source=/dev/null
+source "$LIB_DIR/common.sh"
+
+# --- route ---
+subcommand="${1:-list}"           # bare `ws` -> list
+if [[ $# -gt 0 ]]; then shift; fi  # drop the subcommand; rest are its args
+
+case "$subcommand" in
+  -h|--help|help)
+    # shellcheck source=/dev/null
+    source "$LIB_DIR/cmd_help.sh"
+    cmd_help
+    ;;
+  -V|--version|version)
+    printf 'workspaces %s\n' "$WSM_VERSION"
+    ;;
+  create|list|serve|remove)
+    LOG_PREFIX="$subcommand"
+    load_config
+    # shellcheck source=/dev/null
+    source "$LIB_DIR/cmd_${subcommand}.sh"
+    "cmd_${subcommand}" "$@"
+    ;;
+  *)
+    err "Unknown command: $subcommand"
+    printf "Run '%sws help%s' to see available commands.\n" "$C_CYAN" "$C_RESET" >&2
+    exit 1
+    ;;
+esac

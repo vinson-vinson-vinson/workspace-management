@@ -8,27 +8,21 @@
 cmd_create_usage() {
   cat <<'USAGE'
 Usage:
-  ws create <NAME_OR_TASK_AND_NAME> [--dry-run] [--claude] [--prompt <text>]
+  ws create <NAME_OR_TASK_AND_NAME> [--dry-run]
 
 Rules:
   - With task:    CU-<taskId>_<feature-name>  -> slug/branch CU-<taskId>_<feature-name>
   - Without task: <feature-name>              -> slug/branch <feature-name>
-  - The VS Code workspace opens automatically. Opening a Claude Code session in
-    the Claude desktop app is opt-in: pass --claude (or set OPEN_CLAUDE_DEFAULT
-    in config.sh).
+  - The VS Code workspace opens automatically.
 
 Options:
   --dry-run            Print actions without executing them.
-  --claude             Also open a Claude Code session in the Claude desktop app.
-  --no-claude          Do not open the Claude desktop app (default).
-  --prompt <text>      Prefill the Claude Code session with this prompt (implies --claude).
   -h, --help           Show this help.
 
 Examples:
   ws create CU-1234_Test-Project
   ws create MyNewProject
   ws create CU-1234_Test-Project --dry-run
-  ws create CU-1234_Test-Project --claude --prompt "Implement the task"
 USAGE
 }
 
@@ -103,36 +97,9 @@ add_worktree() {
   run_cmd git -C "$repo" worktree add -b "$branch" "$worktree_path" "$base_ref"
 }
 
-# Percent-encode a string so it is safe as a claude:// deep-link query value.
-url_encode() {
-  local raw="$1" out="" i c
-  for (( i = 0; i < ${#raw}; i++ )); do
-    c="${raw:i:1}"
-    case "$c" in
-      [a-zA-Z0-9._~-]) out+="$c" ;;
-      *) printf -v c '%%%02X' "'$c"; out+="$c" ;;
-    esac
-  done
-  printf '%s' "$out"
-}
-
-# Open the session directory as a Claude Code session in the Claude desktop app.
-open_claude_session() {
-  local session_dir="$1"
-  local url="claude://code/new?folder=$(url_encode "$session_dir")"
-  if [[ -n "$CLAUDE_PROMPT" ]]; then
-    url="${url}&q=$(url_encode "$CLAUDE_PROMPT")"
-  fi
-  log "Opening Claude Code session in Claude desktop app for: $session_dir"
-  run_cmd open "$url"
-}
-
 open_workspace() {
-  local workspace_file="$1" session_dir="$2"
+  local workspace_file="$1"
   run_cmd code -n "$workspace_file"
-  if "$OPEN_CLAUDE"; then
-    open_claude_session "$session_dir"
-  fi
 }
 
 # Pick a legible title-bar foreground ("dark"/"light") for a "#rrggbb" bg using
@@ -165,6 +132,8 @@ write_workspace_file() {
     { "path": "$backend_dir" }
   ],
   "settings": {
+    "git.autoRepositoryDetection": false,
+    "git.openRepositoryInParentFolders": "never",
     "window.titleBarStyle": "custom",
     "workbench.colorCustomizations": {
       "titleBar.activeBackground": "$accent_color",
@@ -204,18 +173,11 @@ random_workspace_color() {
 cmd_create() {
   local positional=() combined=""
   DRY_RUN=false
-  OPEN_CLAUDE="${OPEN_CLAUDE_DEFAULT:-false}"
-  CLAUDE_PROMPT=""
   local TASK_INPUT="" FEATURE_NAME=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --dry-run)   DRY_RUN=true; shift ;;
-      --claude)    OPEN_CLAUDE=true; shift ;;
-      --no-claude) OPEN_CLAUDE=false; shift ;;
-      --prompt)
-        [[ $# -ge 2 ]] || { err "Missing value for --prompt"; exit 1; }
-        CLAUDE_PROMPT="$2"; OPEN_CLAUDE=true; shift 2 ;;
       -h|--help)   cmd_create_usage; exit 0 ;;
       --)
         shift
@@ -282,7 +244,8 @@ cmd_create() {
         log "Workspace color: $workspace_color"
         write_workspace_file "$workspace_file" "$FRONTEND_DIR_NAME" "$BACKEND_DIR_NAME" "$workspace_color"
       fi
-      open_workspace "$workspace_file" "$session_dir"
+      sync_scm_ignores
+      open_workspace "$workspace_file"
       exit 0
     fi
     err "Both worktree paths exist, but at least one is not registered as git worktree. Refusing."
@@ -318,7 +281,8 @@ cmd_create() {
   write_workspace_file "$workspace_file" "$FRONTEND_DIR_NAME" "$BACKEND_DIR_NAME" "$workspace_color"
 
   log "Worktrees created successfully. Opening workspace."
-  open_workspace "$workspace_file" "$session_dir"
+  sync_scm_ignores
+  open_workspace "$workspace_file"
 
   trap - EXIT
 }

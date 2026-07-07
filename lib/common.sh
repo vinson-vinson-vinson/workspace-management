@@ -113,6 +113,86 @@ slug_from_cwd() {
   printf '%s' "$slug"
 }
 
+# ---------------------- VS Code SCM ignore-list sync ------------------------
+# Every worktree of a repo shares one .git, so VS Code's built-in Source Control
+# lists ALL of them (plus the main clone) in every window. VS Code has no
+# allow-list setting — only the `git.ignoredRepositories` deny-list — so each
+# workspace must explicitly ignore the OTHER workspaces' repos. That list is
+# pure derived state (a function of which worktrees currently exist), so we
+# generate it here and never hand-maintain it. See `ws sync`.
+
+# Overwrite settings["git.ignoredRepositories"] in a .code-workspace file with
+# the given repo paths, preserving every other setting. python3 keeps the JSON
+# valid; the tool is macOS-only, where git (via the Xcode CLT) brings python3.
+update_workspace_ignores() {
+  local file="$1"; shift
+  python3 - "$file" "$@" <<'PY'
+import json, sys
+path, ignores = sys.argv[1], sys.argv[2:]
+with open(path) as fh:
+    data = json.load(fh)
+data.setdefault("settings", {})["git.ignoredRepositories"] = ignores
+with open(path, "w") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+PY
+}
+
+# Recompute git.ignoredRepositories for every workspace so each VS Code window
+# shows only the repos inside its own session dir (its frontend/backend
+# worktrees) and hides the other workspaces' worktrees and the main clones.
+# Idempotent; safe to run anytime. Called by create/remove and `ws sync`.
+sync_scm_ignores() {
+  if "$DRY_RUN"; then
+    log "[dry-run] would re-sync VS Code SCM ignore-lists across all workspaces"
+    return 0
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    warn "python3 not found — skipping SCM ignore-list sync (run 'ws sync' after installing it)."
+    return 0
+  fi
+
+  # Every repo VS Code would otherwise surface: both repos' worktrees, incl. each
+  # main clone (git lists it first). Absolute, real paths, one per line.
+  local -a all_repos=()
+  local line
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && all_repos+=("$line")
+  done < <(
+    { git -C "$FRONTEND_REPO" worktree list --porcelain 2>/dev/null
+      git -C "$BACKEND_REPO"  worktree list --porcelain 2>/dev/null
+    } | awk '/^worktree /{ print substr($0, 10) }'
+  )
+  [[ ${#all_repos[@]} -gt 0 ]] || { warn "No worktrees found; nothing to sync."; return 0; }
+
+  local session slug wf repo synced=0
+  for session in "$WORKTREES_ROOT"/*/; do
+    [[ -d "$session" ]] || continue
+    session="${session%/}"
+    slug="${session##*/}"
+    # The workspace file lives in the session dir (current) or project root (legacy).
+    wf="$(workspace_file_for "$slug")"
+    [[ -f "$wf" ]] || wf="$(legacy_workspace_file_for "$slug")"
+    [[ -f "$wf" ]] || continue
+
+    # Ignore every repo NOT directly inside this session dir — i.e. keep this
+    # workspace's own worktrees visible, hide the siblings and the main clones.
+    local -a ignores=()
+    for repo in "${all_repos[@]}"; do
+      [[ "${repo%/*}" == "$session" ]] && continue
+      ignores+=("$repo")
+    done
+
+    if update_workspace_ignores "$wf" ${ignores[@]+"${ignores[@]}"}; then
+      log "SCM sync: $slug -> ${#ignores[@]} repo(s) hidden"
+      synced=$((synced + 1))
+    else
+      warn "SCM sync: failed to update $wf (left unchanged)"
+    fi
+  done
+  log "Synced VS Code SCM ignore-lists for $synced workspace(s)."
+}
+
 # Derive a DNS-safe subdomain label from a slug: the task id for a task slug
 # (CU-1234_x -> cu-1234), else the whole slug, lowercased with non-DNS chars
 # collapsed to '-'. Returns 1 if nothing usable remains.

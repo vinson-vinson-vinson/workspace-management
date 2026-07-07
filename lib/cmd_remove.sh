@@ -282,6 +282,9 @@ cmd_remove() {
   run_cmd git -C "$FRONTEND_REPO" worktree prune
   run_cmd git -C "$BACKEND_REPO" worktree prune
 
+  # Refresh the remaining workspaces' SCM ignore-lists (drop this workspace's repos).
+  sync_scm_ignores
+
   log ""
   log "Workspace '$slug' removed successfully."
 }

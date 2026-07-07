@@ -33,10 +33,11 @@ Everything is one command — `workspaces` (short alias: **`ws`**) — with subc
 
 | Command | What it does |
 | --- | --- |
-| `ws create <slug> [opts]` | Create (or reopen) a workspace: adds the two worktrees, writes a `.code-workspace` file, and opens VS Code. Optionally opens a Claude Code session with `--claude`. |
+| `ws create <slug> [opts]` | Create (or reopen) a workspace: adds the two worktrees, writes a `.code-workspace` file, and opens VS Code. |
 | `ws list` &nbsp;(or bare `ws`) | List all workspaces, star the one you're in, and link each served workspace to its landing URL. |
 | `ws serve [slug] [opts]` | Make a workspace reachable at `<sub>.<domain>` via Valet/nginx: copies + rewrites envs, writes an nginx block, installs deps (`yarn` frontend, cloned vendor backend), and generates the Nuxt scaffolding. Slug defaults to the current directory. |
 | `ws remove [slug] [opts]` | Tear a workspace down safely: reverts routing, removes worktrees, deletes local branches, cleans the session dir. Refuses on unpushed work unless `--force`. Slug defaults to the current directory. |
+| `ws sync` | Recompute each workspace's VS Code Source Control ignore-list so every window shows only its own two worktrees (hiding the other workspaces' worktrees and the main clones). Runs automatically on `create`/`remove`; use this for a manual re-sync. |
 | `ws help` / `ws version` | Banner + command overview / print the version. |
 
 Run `ws <command> --help` for per-command options.
@@ -46,11 +47,13 @@ Run `ws <command> --help` for per-command options.
 - **macOS** — required for now; it uses BSD `sed` (`sed -i ''`), `open`, and the `code` CLI.
 - **git** with worktree support.
 - **VS Code** with the `code` command on your `PATH` (for `ws create`).
+- **python3** — used to keep each workspace's Source Control ignore-list in sync
+  (`ws sync`, run automatically by `create`/`remove`). It ships with the Xcode
+  Command Line Tools that `git` already needs, so it's normally present; if it's
+  missing the sync is skipped with a warning and everything else still works.
 - For `ws serve` only: **Laravel Valet** (nginx + a wildcard cert for
   your domain), `nginx`, `yarn`, and `sudo` access to reload nginx. If you don't
   serve workspaces you can ignore that command entirely.
-- Optional: the **Claude** desktop app, for the opt-in `claude://` deep-link
-  session that `ws create --claude` opens.
 
 ## Setup
 
@@ -144,8 +147,7 @@ form — it no longer gates which workspaces may be served or removed.
 # Create a task workspace (adds worktrees, opens VS Code)
 ws create CU-1234_my-feature
 
-# Also open a Claude Code session (opt-in); or just preview
-ws create CU-1234_my-feature --claude
+# Preview without doing anything
 ws create CU-1234_my-feature --dry-run
 
 # List everything (the workspace you're in is starred); bare `ws` also lists

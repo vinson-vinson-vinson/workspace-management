@@ -38,11 +38,6 @@ BACKEND_BASE_BRANCH="main"
 # "don't touch a main/base checkout" branch check. Case-insensitive.
 TASK_ID_PREFIX="CU"
 
-# Whether `ws create` also opens a Claude Code session (Claude desktop app)
-# rooted at the new session dir. Off by default; --claude enables it per-run.
-# Set to true here if you want a Claude session opened for every workspace.
-OPEN_CLAUDE_DEFAULT=false
-
 # ------------------------------ serving (ws serve) ---------------------------
 # `ws serve` makes a task worktree reachable at <sub>.$BASE_DOMAIN using Laravel
 # Valet's nginx + wildcard cert. If you don't use `ws serve` you can leave this

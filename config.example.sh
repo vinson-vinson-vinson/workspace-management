@@ -24,7 +24,7 @@ FRONTEND_REPO="$ROOT_DIR/$FRONTEND_DIR_NAME"
 BACKEND_REPO="$ROOT_DIR/$BACKEND_DIR_NAME"
 
 # Where session worktrees are created (one sub-directory per workspace slug).
-WORKTREES_ROOT="$ROOT_DIR/worktrees"
+WORKSPACES_ROOT="$ROOT_DIR/workspaces"
 
 # Base branch each brand-new worktree branch is cut from, per repo.
 FRONTEND_BASE_BRANCH="main"

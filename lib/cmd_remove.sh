@@ -202,13 +202,13 @@ cmd_remove() {
   if [[ -z "$slug" ]]; then
     slug="$(slug_from_cwd)" || {
       err "Not inside a worktree directory and no slug provided."
-      err "Expected a path under: $WORKTREES_ROOT/"
+      err "Expected a path under: $WORKSPACES_ROOT/"
       exit 1
     }
     log "Auto-detected slug from CWD: $slug"
   fi
 
-  local session_dir="$WORKTREES_ROOT/$slug"
+  local session_dir="$WORKSPACES_ROOT/$slug"
   local frontend_worktree="$session_dir/$FRONTEND_DIR_NAME"
   local backend_worktree="$session_dir/$BACKEND_DIR_NAME"
   local workspace_file; workspace_file="$(workspace_file_for "$slug")"

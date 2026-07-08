@@ -94,9 +94,9 @@ cmd_list() {
 
   # Collect workspace slugs: immediate subdirectories of the worktrees root.
   local slugs=()
-  if [[ -d "$WORKTREES_ROOT" ]]; then
+  if [[ -d "$WORKSPACES_ROOT" ]]; then
     local entry
-    for entry in "$WORKTREES_ROOT"/*/; do
+    for entry in "$WORKSPACES_ROOT"/*/; do
       [[ -d "$entry" ]] || continue
       slugs+=("$(basename "$entry")")
     done
@@ -112,7 +112,7 @@ cmd_list() {
   cand_key+=("MAIN"); cand_base+=("$BACKEND_REPO")
   local slug
   for slug in ${slugs[@]+"${slugs[@]}"}; do
-    cand_key+=("$slug"); cand_base+=("$WORKTREES_ROOT/$slug")
+    cand_key+=("$slug"); cand_base+=("$WORKSPACES_ROOT/$slug")
   done
 
   local current_key="" best_len=-1 i base

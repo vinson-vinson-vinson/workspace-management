@@ -219,7 +219,7 @@ cmd_create() {
     branch_slug="$name_slug"
   fi
 
-  session_dir="$WORKTREES_ROOT/$branch_slug"
+  session_dir="$WORKSPACES_ROOT/$branch_slug"
   frontend_worktree="$session_dir/$FRONTEND_DIR_NAME"
   backend_worktree="$session_dir/$BACKEND_DIR_NAME"
   workspace_file="$(workspace_file_for "$branch_slug")"

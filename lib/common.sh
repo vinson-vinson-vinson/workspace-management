@@ -95,19 +95,19 @@ is_protected_branch() {
 
 # Path to a workspace's VS Code .code-workspace file. It lives INSIDE the session
 # dir (alongside the two worktrees) so the whole workspace is self-contained.
-workspace_file_for() { printf '%s' "$WORKTREES_ROOT/$1/$1.code-workspace"; }
+workspace_file_for() { printf '%s' "$WORKSPACES_ROOT/$1/$1.code-workspace"; }
 
 # Pre-move location (project root). Kept so `list`/`remove` still handle
 # workspaces created before the file moved into the session dir.
 legacy_workspace_file_for() { printf '%s' "$ROOT_DIR/$1.code-workspace"; }
 
 # Echo the workspace slug for the current directory (first path component under
-# WORKTREES_ROOT), or return 1 if the cwd isn't inside a workspace. No output on
+# WORKSPACES_ROOT), or return 1 if the cwd isn't inside a workspace. No output on
 # failure so callers can print their own error (avoids exit-in-subshell).
 slug_from_cwd() {
   local cwd="$PWD"
-  [[ "$cwd" == "$WORKTREES_ROOT/"* ]] || return 1
-  local rel="${cwd#"$WORKTREES_ROOT/"}"
+  [[ "$cwd" == "$WORKSPACES_ROOT/"* ]] || return 1
+  local rel="${cwd#"$WORKSPACES_ROOT/"}"
   local slug="${rel%%/*}"
   [[ -n "$slug" ]] || return 1
   printf '%s' "$slug"
@@ -166,7 +166,7 @@ sync_scm_ignores() {
   [[ ${#all_repos[@]} -gt 0 ]] || { warn "No worktrees found; nothing to sync."; return 0; }
 
   local session slug wf repo synced=0
-  for session in "$WORKTREES_ROOT"/*/; do
+  for session in "$WORKSPACES_ROOT"/*/; do
     [[ -d "$session" ]] || continue
     session="${session%/}"
     slug="${session##*/}"

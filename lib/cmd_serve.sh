@@ -377,7 +377,7 @@ cmd_serve() {
   if [[ -z "$slug" ]]; then
     slug="$(slug_from_cwd)" || {
       err "Not inside a worktree directory and no slug provided."
-      err "Expected a path under: $WORKTREES_ROOT/"
+      err "Expected a path under: $WORKSPACES_ROOT/"
       exit 1
     }
     log "Auto-detected slug from CWD: $slug"
@@ -391,7 +391,7 @@ cmd_serve() {
     || { err "Refusing to serve '$slug': no DNS-safe characters to build a subdomain from."; exit 1; }
   host="${sub}.${BASE_DOMAIN}"
 
-  session_dir="$WORKTREES_ROOT/$slug"
+  session_dir="$WORKSPACES_ROOT/$slug"
   WT_FRONTEND="$session_dir/$FRONTEND_DIR_NAME"
   WT_BACKEND="$session_dir/$BACKEND_DIR_NAME"
 

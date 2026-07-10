@@ -3,10 +3,11 @@
 > **macOS only** (for now). It relies on BSD `sed`, `open`, the `code`
 > CLI, and Laravel Valet. Linux support isn't there yet.
 
-Bash tooling for spinning up **isolated, per-task development workspaces** out of
-git worktrees, opening them in VS Code, and (optionally) serving each one under
-its own local subdomain — so you can have several tasks in flight at once without
-them stepping on each other.
+**TL;DR** — `ws create <slug>` spins up an isolated workspace (frontend + backend
+git worktrees on their own branch) and opens VS Code; `ws serve` puts it on its
+own local subdomain; `ws list` shows them; `ws remove` tears it down. Run several
+tasks in parallel without them colliding. Setup: copy `config.example.sh` →
+`config.sh`, then `./install.sh`.
 
 A "workspace" is one session directory containing a **frontend** and a
 **backend** worktree of two sibling repos, cut from the same branch:
@@ -47,10 +48,8 @@ Run `ws <command> --help` for per-command options.
 - **macOS** — required for now; it uses BSD `sed` (`sed -i ''`), `open`, and the `code` CLI.
 - **git** with worktree support.
 - **VS Code** with the `code` command on your `PATH` (for `ws create`).
-- **python3** — used to keep each workspace's Source Control ignore-list in sync
-  (`ws sync`, run automatically by `create`/`remove`). It ships with the Xcode
-  Command Line Tools that `git` already needs, so it's normally present; if it's
-  missing the sync is skipped with a warning and everything else still works.
+- **python3** — for `ws sync` (keeps each workspace's Source Control ignore-list
+  current); usually already present, and skipped with a warning if not.
 - For `ws serve` only: **Laravel Valet** (nginx + a wildcard cert for
   your domain), `nginx`, `yarn`, and `sudo` access to reload nginx. If you don't
   serve workspaces you can ignore that command entirely.
@@ -90,8 +89,7 @@ The `workspaces` command is committed executable, so a fresh clone can run it
 directly (`./workspaces help`) with no `chmod` needed. `install.sh` symlinks both
 `workspaces` and its short alias `ws` into a bin directory so you can call them
 from anywhere; the symlinks point back at the checkout, so `git pull` updates the
-command in place. (It also removes the stale `create-workspace`/`serve-workspace`/…
-symlinks from the old layout — repoint any `sws`-style shell alias to `ws serve`.)
+command in place.
 
 `config.sh` is gitignored, so your local paths never get committed. `workspaces`
 looks for its config in this order:
@@ -137,9 +135,8 @@ unrestricted. The only thing `serve`/`remove` refuse is a worktree sitting on a
 protected base branch (main/master or your configured base branch), so your main
 checkout is never overwritten or deleted.
 
-`TASK_ID_PREFIX` is matched case-insensitively; set it to your own tracker's
-prefix (e.g. `JIRA`, `ENG`) or keep `CU`. It only governs the *short* subdomain
-form — it no longer gates which workspaces may be served or removed.
+`TASK_ID_PREFIX` (case-insensitive; default `CU`, e.g. `JIRA`/`ENG`) only governs
+the *short* subdomain form — it doesn't gate which workspaces may be served or removed.
 
 ## Usage
 
@@ -167,16 +164,43 @@ Every subcommand accepts `--dry-run` to print actions without executing them, an
 `-h`/`--help` for full option lists. `ws serve` does **not** start the dev
 servers — it prints the `yarn serve-*` commands for you to run.
 
-## How it fits together
+## Typical workflow
 
-1. `ws create` cuts matching branches in both repos into a shared session
-   directory and opens it.
-2. `ws serve` (optional) copies each repo's env into the worktree, rewrites only
-   the self-domain and dev-server ports (DB, keys, and shared infra keep pointing
-   at your main setup), and adds an nginx block so the whole workspace answers on
-   one subdomain.
-3. `ws list` shows what's live and where.
-4. `ws remove` reverses all of it, with guards against losing unpushed work.
+`create` → `serve` → `list` → `remove`:
+
+1. **create** — cut matching branches in both repos into one session dir; VS Code opens.
+2. **serve** (optional) — the workspace answers on its own subdomain. Only the
+   self-domain and dev-server ports are rewritten, so the DB, keys, and shared
+   infra keep pointing at your main setup.
+3. **list** — see what's live and where.
+4. **remove** — reverses everything, guarding against unpushed work.
+
+## Auth on served subdomains (OAuth wildcard redirects)
+
+A served workspace answers on a subdomain (`cu-1234.anny.dev`) but still
+authenticates against your **main** OAuth server. That server must accept the
+subdomain as a valid redirect target — otherwise the page loads and then auth
+fails with *"authorization is invalid"*. Enable wildcard redirects **per OAuth
+client**, once:
+
+1. **Ensure the `allow_wildcard_redirect` column exists** (once per database):
+
+   ```bash
+   /opt/homebrew/opt/php@8.4/bin/php artisan migrate
+   ```
+
+2. **Set the flag and add the `*.` subdomain variant** to the client's existing
+   redirect URL:
+
+   ```sql
+   UPDATE oauth_clients
+   SET redirect = 'https://anny.dev/admin/login/callback,https://*.anny.dev/admin/login/callback',
+       allow_wildcard_redirect = 1
+   WHERE name = 'admin';
+   ```
+
+   The existing URL is kept; the `*.` variant is added alongside it. Repeat for
+   each client, using that client's own callback path.
 
 ## License
 

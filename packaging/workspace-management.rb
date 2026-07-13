@@ -16,9 +16,9 @@ class WorkspaceManagement < Formula
   homepage "https://github.com/vinson-vinson-vinson/workspace-management"
   url "git@github.com:vinson-vinson-vinson/workspace-management.git",
       using:    :git,
-      tag:      "v0.1.0",
-      revision: "14971d9eed4960b507575f486f8dda5934a21108"
-  version "0.1.0"
+      tag:      "v1.0.0",
+      revision: "0f27df117e1145e7cef27b2dd211aad0e9ba94ae"
+  version "1.0.0"
   license "MIT"
 
   # Install the newest main with:  brew install --HEAD <tap>/workspace-management

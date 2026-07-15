@@ -37,5 +37,6 @@ cmd_sync() {
       *)  err "Unexpected argument: $1"; cmd_sync_usage; exit 1 ;;
     esac
   done
-  sync_scm_ignores
+  # Manual invocation: the sync IS the headline here, so announce the result.
+  sync_scm_ignores announce
 }

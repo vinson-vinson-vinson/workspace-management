@@ -22,11 +22,62 @@ else
   TTY=false
 fi
 
+# ---------------------------- brand gradient --------------------------------
+# The wordmark fade (vaporwave: pink -> sky) from `ws help`. Shared here so the
+# banner and `ws serve`'s summary box use one accent.
+WSM_GRAD_R1=255; WSM_GRAD_G1=113; WSM_GRAD_B1=206     # pink
+WSM_GRAD_R2=1;   WSM_GRAD_G2=205; WSM_GRAD_B2=254     # sky
+
+# Per-char slicing of multibyte glyphs only works in a UTF-8 locale — under a
+# byte-oriented one (LC_ALL=C) ${#} counts bytes and we'd cut a glyph in half.
+# Probe with a single box-drawing char: 1 = char-wise, 3 = byte-wise.
+_WS_UTF8_PROBE='─'
+if [[ ${#_WS_UTF8_PROBE} -eq 1 ]]; then WS_UTF8=true; else WS_UTF8=false; fi
+
+if "$TTY"; then
+  WSM_GRAD_START=$'\033[1;38;2;255;113;206m'
+  WSM_GRAD_END=$'\033[1;38;2;1;205;254m'
+else
+  WSM_GRAD_START=""; WSM_GRAD_END=""
+fi
+
+# Echo $1 with the brand fade interpolated per character across a ramp of $2
+# columns (default: the text's own width). No indent, no trailing newline.
+# Prints plain text when stdout isn't a TTY or the locale is byte-oriented.
+ws_grad() {
+  local text="$1"
+  local ramp="${2:-${#text}}"
+  local n=${#text} i t r g b
+  if ! "$TTY" || ! "$WS_UTF8"; then printf '%s' "$text"; return; fi
+  (( ramp < 2 )) && ramp=2
+  for ((i = 0; i < n; i++)); do
+    t=$i; (( t > ramp - 1 )) && t=$(( ramp - 1 ))
+    r=$(( WSM_GRAD_R1 + (WSM_GRAD_R2 - WSM_GRAD_R1) * t / (ramp - 1) ))
+    g=$(( WSM_GRAD_G1 + (WSM_GRAD_G2 - WSM_GRAD_G1) * t / (ramp - 1) ))
+    b=$(( WSM_GRAD_B1 + (WSM_GRAD_B2 - WSM_GRAD_B1) * t / (ramp - 1) ))
+    printf '\033[1;38;2;%d;%d;%dm%s' "$r" "$g" "$b" "${text:i:1}"
+  done
+  printf '%s' "$C_RESET"
+}
+
+# Echo char $1 repeated $2 times (bash-3.2 safe).
+ws_rule() {
+  local ch="$1" n="$2" i out=""
+  for ((i = 0; i < n; i++)); do out+="$ch"; done
+  printf '%s' "$out"
+}
+
 # ------------------------------- logging ------------------------------------
 # The dispatcher sets LOG_PREFIX to the running subcommand, so messages read
 # like "[serve] …" / "[create] …".
 LOG_PREFIX="ws"
 log()  { printf '[%s] %s\n' "$LOG_PREFIX" "$*"; }
+# A completed milestone: green check, no [prefix] noise.
+ok()   { printf '  %s✓%s %s\n' "$C_GREEN" "$C_RESET" "$*"; }
+# Step detail: shown only under -v. A normal run prints just the milestone
+# checks. (`return 0` keeps a false VERBOSE from surfacing as a non-zero status
+# under `set -e`.)
+vlog() { "$VERBOSE" && log "$@"; return 0; }
 err()  { printf '[%s] ERROR: %s\n' "$LOG_PREFIX" "$*" >&2; }
 warn() { printf '[%s] WARN: %s\n' "$LOG_PREFIX" "$*" >&2; }
 
@@ -142,9 +193,14 @@ PY
 # shows only the repos inside its own session dir (its frontend/backend
 # worktrees) and hides the other workspaces' worktrees and the main clones.
 # Idempotent; safe to run anytime. Called by create/remove and `ws sync`.
+#
+# Pass "announce" (as `ws sync` does) to end with a ✓ summary. Called as a side
+# effect of create/remove it stays quiet — the sync isn't the headline there —
+# but warnings still surface either way.
 sync_scm_ignores() {
+  local announce="${1:-}"
   if "$DRY_RUN"; then
-    log "[dry-run] would re-sync VS Code SCM ignore-lists across all workspaces"
+    printf '[dry-run] re-sync VS Code SCM ignore-lists across all workspaces\n'
     return 0
   fi
   if ! command -v python3 >/dev/null 2>&1; then
@@ -184,13 +240,17 @@ sync_scm_ignores() {
     done
 
     if update_workspace_ignores "$wf" ${ignores[@]+"${ignores[@]}"}; then
-      log "SCM sync: $slug -> ${#ignores[@]} repo(s) hidden"
+      vlog "SCM sync: $slug -> ${#ignores[@]} repo(s) hidden"
       synced=$((synced + 1))
     else
       warn "SCM sync: failed to update $wf (left unchanged)"
     fi
   done
-  log "Synced VS Code SCM ignore-lists for $synced workspace(s)."
+  if [[ "$announce" == "announce" ]]; then
+    ok "synced $synced workspace(s)"
+  else
+    vlog "Synced VS Code SCM ignore-lists for $synced workspace(s)."
+  fi
 }
 
 # Derive a DNS-safe subdomain label from a slug: the task id for a task slug

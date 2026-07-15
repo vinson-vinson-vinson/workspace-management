@@ -41,28 +41,31 @@ USAGE
 revert_serve_setup() {
   local slug="$1" sub host conf
   if ! sub="$(resolve_subdomain "$slug")"; then
-    log "Slug has no subdomain mapping; no routing to revert."
+    vlog "Slug has no subdomain mapping; no routing to revert."
     return 0
   fi
   host="${sub}.${BASE_DOMAIN}"
   conf="$VALET_NGINX_DIR/$host"
 
   if [[ ! -f "$conf" ]]; then
-    log "No nginx block for $host. Nothing to revert."
+    vlog "No nginx block for $host. Nothing to revert."
     return 0
   fi
 
-  log "Reverting routing for https://$host"
+  vlog "Reverting routing for https://$host"
   if "$DRY_RUN"; then
     printf '[dry-run] rm -f %s\n' "$conf"
     printf '[dry-run] sudo nginx -t && sudo nginx -s reload\n'
     return 0
   fi
 
+  # Visible, like serve's: sudo is about to prompt and should say why.
+  log "Requesting sudo (needed to reload nginx)…"
   sudo -v || { err "sudo is required to reload nginx."; exit 1; }
   rm -f "$conf"
   if run_nginx -t && run_nginx -s reload; then
-    log "Removed nginx block and reloaded nginx."
+    vlog "Removed nginx block and reloaded nginx."
+    ok "routing reverted ($host)"
   else
     warn "nginx reload failed after removing $conf — check the config manually."
   fi
@@ -103,27 +106,31 @@ has_unpushed_commits() {
   [[ "${count:-0}" -gt 0 ]]
 }
 
+# Echo a one-line "<label>: <issues>" summary if the worktree has local-only
+# work, else echo nothing. Returns 1 when dirty. Deliberately does NOT print its
+# own errors — the caller collects every worktree's verdict into ONE error block,
+# rather than eight consecutive ERROR: lines for a single problem.
 check_worktree_clean() {
   local worktree_path="$1" label="$2" issues=()
   if [[ ! -d "$worktree_path" ]]; then
-    log "$label worktree not found at $worktree_path — skipping checks."
+    vlog "$label worktree not found at $worktree_path — skipping checks."
     return 0
   fi
-  has_uncommitted_changes "$worktree_path" && issues+=("has uncommitted changes")
-  has_unpushed_commits "$worktree_path"    && issues+=("has unpushed commits")
+  has_uncommitted_changes "$worktree_path" && issues+=("uncommitted changes")
+  has_unpushed_commits "$worktree_path"    && issues+=("unpushed commits")
   if [[ ${#issues[@]} -gt 0 ]]; then
-    err "$label worktree ($worktree_path):"
-    local issue
-    for issue in "${issues[@]}"; do err "  - $issue"; done
+    local joined; joined="$(printf '%s, ' "${issues[@]}")"
+    printf '%s: %s' "$label" "${joined%, }"
     return 1
   fi
-  log "$label worktree is clean."
+  vlog "$label worktree is clean."
   return 0
 }
 
 confirm_removal() {
   local slug="$1"
   if "$FORCE" || "$DRY_RUN"; then return 0; fi
+  # Never behind -v: a destructive prompt must state what it destroys.
   log "About to remove workspace: $slug"
   log "This will:"
   printf '  - Revert serve routing (remove nginx block + reload), if any\n'
@@ -142,10 +149,10 @@ confirm_removal() {
 remove_worktree() {
   local repo="$1" worktree_path="$2" label="$3"
   if [[ ! -d "$worktree_path" ]]; then
-    log "$label worktree does not exist. Skipping."; return 0
+    vlog "$label worktree does not exist. Skipping."; return 0
   fi
   if git -C "$repo" worktree list --porcelain | grep -Fqx "worktree $worktree_path"; then
-    log "Removing $label worktree: $worktree_path"
+    vlog "Removing $label worktree: $worktree_path"
     # Tolerate failure: serve adds ignored files (installed node_modules, cloned
     # vendor, copied .env). The session-dir rm -rf and `git worktree prune`
     # finish the cleanup if this can't.
@@ -170,10 +177,10 @@ remove_local_branch() {
     return 0
   fi
   if git -C "$repo" show-ref --verify --quiet "refs/heads/$branch"; then
-    log "Deleting local $label branch: $branch"
+    vlog "Deleting local $label branch: $branch"
     run_cmd git -C "$repo" branch -D "$branch"
   else
-    log "No local $label branch '$branch'. Skipping."
+    vlog "No local $label branch '$branch'. Skipping."
   fi
 }
 
@@ -205,7 +212,7 @@ cmd_remove() {
       err "Expected a path under: $WORKSPACES_ROOT/"
       exit 1
     }
-    log "Auto-detected slug from CWD: $slug"
+    vlog "Auto-detected slug from CWD: $slug"
   fi
 
   local session_dir="$WORKSPACES_ROOT/$slug"
@@ -213,58 +220,62 @@ cmd_remove() {
   local backend_worktree="$session_dir/$BACKEND_DIR_NAME"
   local workspace_file; workspace_file="$(workspace_file_for "$slug")"
 
-  log "Slug: $slug"
-  log "Session dir: $session_dir"
-  log "Frontend worktree: $frontend_worktree"
-  log "Backend worktree: $backend_worktree"
-  log "Workspace file: $workspace_file"
-  log ""
+  vlog "Slug: $slug"
+  vlog "Session dir: $session_dir"
+  vlog "Frontend worktree: $frontend_worktree"
+  vlog "Backend worktree: $backend_worktree"
+  vlog "Workspace file: $workspace_file"
+  vlog ""
 
   # SAFETY: bail out before touching anything if this is a main/base checkout.
   guard_not_main "$slug" "$frontend_worktree" "$backend_worktree"
 
   # --- Safety checks ---
-  local clean=true
-  check_worktree_clean "$frontend_worktree" "Frontend" || clean=false
-  check_worktree_clean "$backend_worktree" "Backend"  || clean=false
+  # Collect every worktree's verdict first, then report once. One problem should
+  # produce one error, not one per worktree per issue.
+  local -a dirty=()
+  local verdict
+  verdict="$(check_worktree_clean "$frontend_worktree" "$FRONTEND_DIR_NAME")" || dirty+=("$verdict")
+  verdict="$(check_worktree_clean "$backend_worktree" "$BACKEND_DIR_NAME")"  || dirty+=("$verdict")
 
-  if ! "$clean"; then
+  if [[ ${#dirty[@]} -gt 0 ]]; then
+    # One prefixed headline, then bare continuation lines — repeating
+    # "[remove] ERROR:" down the block just makes one problem look like four.
     if "$FORCE"; then
-      warn ""
-      warn "Workspace has uncommitted or unpushed work, but --force was given."
-      warn "Proceeding anyway — local-only commits will be lost."
+      warn "Workspace has local-only work, but --force was given — it will be lost:"
+      for verdict in "${dirty[@]}"; do printf '           - %s\n' "$verdict" >&2; done
     else
-      err ""
-      err "Workspace has unpushed work. Push all changes to remote before removing."
-      err "Or use --force to remove anyway (discards local-only commits and branches)."
-      err "Aborting."
+      err "Workspace has local-only work:"
+      for verdict in "${dirty[@]}"; do printf '           - %s\n' "$verdict" >&2; done
+      printf '         Push it, or use --force to discard it.\n' >&2
       exit 1
     fi
   fi
 
   confirm_removal "$slug"
 
-  log ""
-  log "Removing workspace..."
+  vlog "Removing workspace..."
 
   revert_serve_setup "$slug"
 
   remove_worktree "$FRONTEND_REPO" "$frontend_worktree" "Frontend"
   remove_worktree "$BACKEND_REPO" "$backend_worktree" "Backend"
+  ok "worktrees removed"
 
   remove_local_branch "$FRONTEND_REPO" "$slug" "frontend"
   remove_local_branch "$BACKEND_REPO" "$slug" "backend"
+  ok "branches deleted"
 
   if [[ -d "$session_dir" ]]; then
     if [[ -z "$(ls -A "$session_dir" 2>/dev/null)" ]]; then
-      log "Removing empty session directory: $session_dir"
+      vlog "Removing empty session directory: $session_dir"
       run_cmd rmdir "$session_dir"
     else
-      log "Session directory not empty after worktree removal. Forcing removal."
+      vlog "Session directory not empty after worktree removal. Forcing removal."
       run_cmd rm -rf "$session_dir"
     fi
   else
-    log "Session directory does not exist. Skipping."
+    vlog "Session directory does not exist. Skipping."
   fi
 
   # The workspace file now lives inside the session dir (removed above with it);
@@ -272,12 +283,12 @@ cmd_remove() {
   local wf removed_wf=false
   for wf in "$workspace_file" "$(legacy_workspace_file_for "$slug")"; do
     if [[ -f "$wf" ]]; then
-      log "Removing workspace file: $wf"
+      vlog "Removing workspace file: $wf"
       run_cmd rm -f "$wf"
       removed_wf=true
     fi
   done
-  "$removed_wf" || log "No workspace file found. Skipping."
+  "$removed_wf" || vlog "No workspace file found. Skipping."
 
   run_cmd git -C "$FRONTEND_REPO" worktree prune
   run_cmd git -C "$BACKEND_REPO" worktree prune
@@ -285,6 +296,6 @@ cmd_remove() {
   # Refresh the remaining workspaces' SCM ignore-lists (drop this workspace's repos).
   sync_scm_ignores
 
-  log ""
-  log "Workspace '$slug' removed successfully."
+  vlog "Workspace '$slug' removed successfully."
+  ok "workspace removed ($slug)"
 }

@@ -80,20 +80,27 @@ remote_branch_exists() {
   git -C "$repo" ls-remote --heads --exit-code origin "$branch" >/dev/null 2>&1
 }
 
+# Records how the branch was obtained, so the milestone check can say what
+# actually happened rather than always claiming "created".
+BRANCH_ORIGIN=""
+
 add_worktree() {
   local repo="$1" branch="$2" worktree_path="$3" base_ref="$4"
   if branch_exists_local "$repo" "$branch"; then
-    log "Reusing existing local branch '$branch' in $repo"
+    vlog "Reusing existing local branch '$branch' in $repo"
+    BRANCH_ORIGIN="reused existing local branch"
     run_cmd git -C "$repo" worktree add "$worktree_path" "$branch"
     return
   fi
   if remote_branch_exists "$repo" "$branch"; then
-    log "Checking out existing remote branch 'origin/$branch' in $repo"
+    vlog "Checking out existing remote branch 'origin/$branch' in $repo"
+    BRANCH_ORIGIN="checked out from origin"
     run_cmd git -C "$repo" fetch origin "$branch"
     run_cmd git -C "$repo" worktree add --track -b "$branch" "$worktree_path" "origin/$branch"
     return
   fi
-  log "Creating new branch '$branch' from '$base_ref' in $repo"
+  vlog "Creating new branch '$branch' from '$base_ref' in $repo"
+  BRANCH_ORIGIN="created from $base_ref"
   run_cmd git -C "$repo" worktree add -b "$branch" "$worktree_path" "$base_ref"
 }
 
@@ -227,10 +234,10 @@ cmd_create() {
   frontend_ref="$(resolve_base_ref "$FRONTEND_REPO" "$FRONTEND_BASE_BRANCH")"
   backend_ref="$(resolve_base_ref "$BACKEND_REPO" "$BACKEND_BASE_BRANCH")"
 
-  log "Session slug: $branch_slug"
-  log "Frontend worktree: $frontend_worktree"
-  log "Backend worktree: $backend_worktree"
-  log "Workspace file: $workspace_file"
+  vlog "Session slug: $branch_slug"
+  vlog "Frontend worktree: $frontend_worktree"
+  vlog "Backend worktree: $backend_worktree"
+  vlog "Workspace file: $workspace_file"
 
   local frontend_exists=false backend_exists=false
   [[ -d "$frontend_worktree" ]] && frontend_exists=true
@@ -238,14 +245,17 @@ cmd_create() {
 
   if "$frontend_exists" && "$backend_exists"; then
     if worktree_registered "$FRONTEND_REPO" "$frontend_worktree" && worktree_registered "$BACKEND_REPO" "$backend_worktree"; then
-      log "Session already exists completely. Opening workspace only."
+      vlog "Session already exists completely. Opening workspace only."
+      ok "workspace already exists ($branch_slug)"
       if [[ ! -f "$workspace_file" ]]; then
         workspace_color="$(random_workspace_color)"
-        log "Workspace color: $workspace_color"
+        vlog "Workspace color: $workspace_color"
         write_workspace_file "$workspace_file" "$FRONTEND_DIR_NAME" "$BACKEND_DIR_NAME" "$workspace_color"
+        ok "workspace file written"
       fi
       sync_scm_ignores
       open_workspace "$workspace_file"
+      ok "VS Code opened"
       exit 0
     fi
     err "Both worktree paths exist, but at least one is not registered as git worktree. Refusing."
@@ -275,14 +285,21 @@ cmd_create() {
   created_frontend=true
   add_worktree "$BACKEND_REPO" "$branch_slug" "$backend_worktree" "$backend_ref"
   created_backend=true
+  # Both repos take the same slug, so BRANCH_ORIGIN from the last add_worktree
+  # describes both.
+  ok "branches ${BRANCH_ORIGIN} ($branch_slug)"
+  ok "worktrees added ($FRONTEND_DIR_NAME, $BACKEND_DIR_NAME)"
 
   workspace_color="$(random_workspace_color)"
-  log "Workspace color: $workspace_color"
+  vlog "Workspace color: $workspace_color"
   write_workspace_file "$workspace_file" "$FRONTEND_DIR_NAME" "$BACKEND_DIR_NAME" "$workspace_color"
+  ok "workspace file written"
 
-  log "Worktrees created successfully. Opening workspace."
+  vlog "Worktrees created successfully. Opening workspace."
   sync_scm_ignores
+  # Checked last, once it has actually happened — not announced in advance.
   open_workspace "$workspace_file"
+  ok "VS Code opened"
 
   trap - EXIT
 }

@@ -314,17 +314,28 @@ setup_dependencies() {
     done
   fi
 
-  # Seed the backend's Cognitor JWT public key. The backend verifies
-  # Cognitor-issued tokens (via anny/laravel-jwt-guard) against
-  # storage/cognitor-public.key — a generated secret outside git. Without it
-  # file_get_contents() throws, every authenticated request 500s, and the
-  # frontend's auth retry trips a 503. Copy it from the main backend.
-  local cog_key="storage/cognitor-public.key"
+  # Seed the backend's Cognitor JWT public key. anny/laravel-jwt-guard verifies
+  # Cognitor-issued tokens against the key file named by IAM_PUBLIC_KEY_PATH
+  # (relative to storage/, e.g. `cognitor.key`) — a generated secret outside git.
+  # Without it file_get_contents() throws, EVERY authenticated request 500s, and
+  # the frontend surfaces it as "Failed to load user/org data" / auth_failed.
+  # Seed whatever the .env actually points at (prefer the worktree's .env, fall
+  # back to main's) so we never seed the wrong filename — the app uses
+  # `cognitor.key`, NOT `cognitor-public.key`.
+  local cog_env="$WT_BACKEND/.env"; [[ -f "$cog_env" ]] || cog_env="$BACKEND_REPO/.env"
+  local cog_rel=""
+  if [[ -f "$cog_env" ]]; then
+    cog_rel="$(grep -E '^IAM_PUBLIC_KEY_PATH=' "$cog_env" | tail -1 | cut -d= -f2-)"
+    cog_rel="${cog_rel//\"/}"; cog_rel="${cog_rel//\'/}"; cog_rel="${cog_rel// /}"
+  fi
+  [[ -n "$cog_rel" ]] || cog_rel="cognitor.key"
+  local cog_key="storage/$cog_rel"
   if [[ ! -f "$BACKEND_REPO/$cog_key" ]]; then
     warn "Main backend missing $cog_key — worktree Cognitor JWT verification will 500."
   elif [[ -f "$WT_BACKEND/$cog_key" ]]; then
     log "Cognitor public key already present in worktree (skipping)."
   else
+    run_cmd mkdir -p "$WT_BACKEND/$(dirname "$cog_key")"
     run_cmd cp "$BACKEND_REPO/$cog_key" "$WT_BACKEND/$cog_key"
     log "Seeded Cognitor public key into worktree ($cog_key)."
   fi

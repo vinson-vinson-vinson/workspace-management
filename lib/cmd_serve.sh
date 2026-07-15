@@ -369,6 +369,9 @@ setup_dependencies() {
   local cog_key="storage/$cog_rel"
   if [[ ! -f "$BACKEND_REPO/$cog_key" ]]; then
     warn "Main backend missing $cog_key — worktree Cognitor JWT verification will 500."
+    # Same class as a missing vendor: the workspace comes up but every
+    # authenticated request fails. Don't report success for that.
+    DEPS_OK=false
   elif [[ -f "$WT_BACKEND/$cog_key" ]]; then
     vlog "Cognitor public key already present in worktree (skipping)."
   else

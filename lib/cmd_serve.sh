@@ -42,6 +42,10 @@ Notes:
 USAGE
 }
 
+# Set to false by any dependency step that didn't fully succeed, so we never
+# claim "dependencies installed successfully" over the top of a warning.
+DEPS_OK=true
+
 # ------------------------------ app registry --------------------------------
 # The registry lives in config.sh as APPS=("key:dir:route:offset" …) and
 # DEFAULT_APPS=(…). Only apps with a matching .env (or .env.example) get served.
@@ -103,7 +107,7 @@ prepare_frontend_env() {
     return 1
   fi
   if [[ -f "$wt_env" ]] && ! "$FORCE"; then
-    log "Frontend env already present: $dir/.env (keeping existing; use --force to regenerate)."
+    vlog "Frontend env already present: $dir/.env (keeping existing; use --force to regenerate)."
     return 0
   fi
   if [[ ! -f "$main_env" ]]; then
@@ -119,7 +123,7 @@ prepare_frontend_env() {
   set_env_var "$wt_env" HOST "127.0.0.1"
   set_env_var "$wt_env" PORT "$port"
   sed -i '' -E "/^ECHO_HOST_URL=/!s#https://${BASE_DOMAIN_RE}#https://${host}#g" "$wt_env"
-  log "Frontend env ready: $dir (.env, PORT=$port, host=$host)"
+  vlog "Frontend env ready: $dir (.env, PORT=$port, host=$host)"
   return 0
 }
 
@@ -129,7 +133,7 @@ prepare_backend_env() {
   local wt_env="$WT_BACKEND/.env"
   [[ -f "$main_env" ]] || { err "Main backend .env not found: $main_env"; exit 1; }
   if [[ -f "$wt_env" ]] && ! "$FORCE"; then
-    log "Backend env already present (keeping existing; use --force to regenerate)."
+    vlog "Backend env already present (keeping existing; use --force to regenerate)."
     return 0
   fi
   if "$DRY_RUN"; then
@@ -138,7 +142,7 @@ prepare_backend_env() {
   fi
   cp "$main_env" "$wt_env"
   sed -i '' -E "s#https://${BASE_DOMAIN_RE}#https://${host}#g" "$wt_env"
-  log "Backend env ready: reuses main DB, APP_URL=https://${host}"
+  vlog "Backend env ready: reuses main DB, APP_URL=https://${host}"
 }
 
 # ------------------------------ nginx block ---------------------------------
@@ -233,18 +237,24 @@ ensure_nginx() {
   fi
 
   if ! "$FORCE" && [[ -f "$conf" && "$(cat "$conf")" == "$expected" ]]; then
-    log "nginx routing already up to date — no rewrite/reload needed."
+    vlog "nginx routing already up to date — no rewrite/reload needed."
+    ok "nginx setup successfully"
+    ok "no reload needed (routing unchanged)"
     return 0
   fi
 
   printf '%s\n' "$expected" >"$conf"
-  log "Wrote nginx block: $conf"
+  vlog "Wrote nginx block: $conf"
+  ok "nginx setup successfully"
 
+  # Stays visible even without -v: `sudo` is about to prompt for a password and
+  # a bare "Password:" with no stated reason is hostile.
   log "Requesting sudo (needed to reload nginx)…"
   sudo -v || { err "sudo is required to reload nginx."; exit 1; }
   run_nginx -t || { err "nginx config test failed — not reloading."; exit 1; }
   run_nginx -s reload || { err "nginx reload failed."; exit 1; }
-  log "nginx reloaded."
+  vlog "nginx reloaded."
+  ok "reloaded successfully"
 }
 
 # ------------------------------ dependencies --------------------------------
@@ -258,29 +268,55 @@ setup_dependencies() {
     run_cmd cp "$FRONTEND_REPO/.env.yarn" "$WT_FRONTEND/.env.yarn"
   fi
 
+  # Backend deps FIRST: cloning vendor is fast, local and deterministic, whereas
+  # the yarn install below is slow and network-dependent. Ordered the other way
+  # round, a failed/interrupted yarn aborts the whole function under `set -e` and
+  # the worktree is left with no vendor at all — Laravel then can't boot and the
+  # backend 500s, which looks like "the backend can't be found".
+  #
+  # CLONE vendor (copy-on-write) rather than symlink: a symlinked vendor makes
+  # Composer's autoloader resolve its base dir to the MAIN repo (PHP realpaths
+  # __DIR__), so the worktree would run main's backend code.
+  #
+  # NB: test -L as well as -e — `-e` follows symlinks and is FALSE for a dangling
+  # one, so a vendor symlink whose target has moved would slip past an -e-only
+  # guard and then make `cp` write through the broken link.
+  if [[ -L "$WT_BACKEND/vendor" && ! -e "$WT_BACKEND/vendor" ]]; then
+    warn "vendor is a dangling symlink ($(readlink "$WT_BACKEND/vendor")) — replacing it with a real clone."
+    run_cmd rm -f "$WT_BACKEND/vendor"
+  fi
+
+  if [[ -e "$WT_BACKEND/vendor" ]]; then
+    vlog "vendor already present in worktree (skipping)."
+  elif "$DRY_RUN"; then
+    printf '[dry-run] cp -Rc %s %s (clone vendor)\n' "$BACKEND_REPO/vendor" "$WT_BACKEND/vendor"
+  elif [[ ! -d "$BACKEND_REPO/vendor" ]]; then
+    warn "Main backend has no vendor/ ($BACKEND_REPO/vendor) — run 'composer install' there, then re-run 'ws serve'."
+    DEPS_OK=false
+  else
+    cp -Rc "$BACKEND_REPO/vendor" "$WT_BACKEND/vendor" 2>/dev/null \
+      || cp -R "$BACKEND_REPO/vendor" "$WT_BACKEND/vendor"
+    vlog "Cloned vendor into worktree."
+  fi
+
   # Frontend: install real dependencies with Yarn. We deliberately do NOT symlink
   # node_modules from the main repo — a symlink is confusing (stack traces point
   # back at the main clone) and couples the worktree to main. Yarn's postinstall
   # (nuxi prepare) also generates the root .nuxt that every app's tsconfig
   # extends. Install once; a re-run skips if node_modules already exists.
+  #
+  # A yarn failure is a WARNING, not a hard abort: the backend is already set up
+  # by this point, so a flaky registry shouldn't tear down the rest of serve.
+  # Say so loudly instead — a half-installed frontend is easy to finish by hand.
   if [[ -d "$WT_FRONTEND/node_modules" ]]; then
-    log "Frontend node_modules already present (skipping yarn — run 'yarn' in the worktree to refresh)."
+    vlog "Frontend node_modules already present (skipping yarn — run 'yarn' in the worktree to refresh)."
   else
-    log "Installing frontend dependencies with yarn (this can take a while)…"
-    run_cmd bash -c "cd '$WT_FRONTEND' && yarn"
-  fi
-
-  # Backend: CLONE vendor (copy-on-write) rather than symlink. A symlinked vendor
-  # makes Composer's autoloader resolve its base dir to the MAIN repo (PHP
-  # realpaths __DIR__), so the worktree would run main's backend code.
-  if [[ -e "$WT_BACKEND/vendor" ]]; then
-    log "vendor already present in worktree (skipping)."
-  elif "$DRY_RUN"; then
-    printf '[dry-run] cp -Rc %s %s (clone vendor)\n' "$BACKEND_REPO/vendor" "$WT_BACKEND/vendor"
-  else
-    cp -Rc "$BACKEND_REPO/vendor" "$WT_BACKEND/vendor" 2>/dev/null \
-      || cp -R "$BACKEND_REPO/vendor" "$WT_BACKEND/vendor"
-    log "Cloned vendor into worktree."
+    vlog "Installing frontend dependencies with yarn (this can take a while)…"
+    if ! run_cmd bash -c "cd '$WT_FRONTEND' && yarn"; then
+      warn "yarn install failed in $WT_FRONTEND."
+      DEPS_OK=false
+      warn "The backend is set up; finish the frontend with: cd '$WT_FRONTEND' && yarn"
+    fi
   fi
 
   # Generate the Nuxt scaffolding the worktree needs. Every app's root
@@ -292,11 +328,12 @@ setup_dependencies() {
   local nuxi="$WT_FRONTEND/node_modules/.bin/nuxi"
   if [[ ! -e "$nuxi" ]]; then
     warn "nuxi not found in worktree node_modules — skipping Nuxt prepare (run 'yarn' in $WT_FRONTEND)."
+    DEPS_OK=false
   else
     if [[ -f "$WT_FRONTEND/.nuxt/tsconfig.json" ]]; then
-      log "Root Nuxt scaffolding already present (skipping)."
+      vlog "Root Nuxt scaffolding already present (skipping)."
     else
-      log "Preparing root Nuxt scaffolding (nuxi prepare)…"
+      vlog "Preparing root Nuxt scaffolding (nuxi prepare)…"
       run_cmd bash -c "cd '$WT_FRONTEND' && ./node_modules/.bin/nuxi prepare" \
         || warn "nuxi prepare (root) failed — the app may 500 until .nuxt is generated."
     fi
@@ -305,9 +342,9 @@ setup_dependencies() {
       dir="$(app_dir "$sa")" || continue
       [[ -d "$WT_FRONTEND/$dir" ]] || continue
       if [[ -f "$WT_FRONTEND/$dir/.nuxt/tsconfig.json" ]]; then
-        log "Nuxt scaffolding already present for $dir (skipping)."
+        vlog "Nuxt scaffolding already present for $dir (skipping)."
       else
-        log "Preparing Nuxt scaffolding for ${dir}…"
+        vlog "Preparing Nuxt scaffolding for ${dir}…"
         run_cmd bash -c "cd '$WT_FRONTEND' && ./node_modules/.bin/nuxi prepare '$dir'" \
           || warn "nuxi prepare '$dir' failed — that app may 500 until its .nuxt is generated."
       fi
@@ -333,11 +370,11 @@ setup_dependencies() {
   if [[ ! -f "$BACKEND_REPO/$cog_key" ]]; then
     warn "Main backend missing $cog_key — worktree Cognitor JWT verification will 500."
   elif [[ -f "$WT_BACKEND/$cog_key" ]]; then
-    log "Cognitor public key already present in worktree (skipping)."
+    vlog "Cognitor public key already present in worktree (skipping)."
   else
     run_cmd mkdir -p "$WT_BACKEND/$(dirname "$cog_key")"
     run_cmd cp "$BACKEND_REPO/$cog_key" "$WT_BACKEND/$cog_key"
-    log "Seeded Cognitor public key into worktree ($cog_key)."
+    vlog "Seeded Cognitor public key into worktree ($cog_key)."
   fi
 
   # Laravel: ensure writable runtime dirs and drop any stale cached config.
@@ -391,7 +428,7 @@ cmd_serve() {
       err "Expected a path under: $WORKSPACES_ROOT/"
       exit 1
     }
-    log "Auto-detected slug from CWD: $slug"
+    vlog "Auto-detected slug from CWD: $slug"
   fi
 
   # Dots escaped so BASE_DOMAIN can be dropped into the env-rewriting sed regexes.
@@ -431,10 +468,10 @@ cmd_serve() {
     requested_apps=("${DEFAULT_APPS[@]}")
   fi
 
-  log "Slug:      $slug"
-  log "Subdomain: https://$host"
-  log "Worktree:  $session_dir"
-  log "Port base: $PORT_BASE   apps: ${requested_apps[*]}"
+  vlog "Slug:      $slug"
+  vlog "Subdomain: https://$host"
+  vlog "Worktree:  $session_dir"
+  vlog "Port base: $PORT_BASE   apps: ${requested_apps[*]}"
 
   # 1) envs (idempotent: existing worktree envs are kept unless --force)
   local app
@@ -445,27 +482,83 @@ cmd_serve() {
   done
   [[ ${#served_apps[@]} -gt 0 ]] || { err "No servable frontend apps found."; exit 1; }
   prepare_backend_env "$host"
+  ok "envs copied successfully"
 
   # 2) nginx (idempotent: only rewrites + reloads — and prompts sudo — if changed)
+  #    ensure_nginx emits its own two checks; which ones depend on whether the
+  #    routing actually changed.
   ensure_nginx "$host" "${served_apps[@]}"
 
   # 3) dependencies (last — only after routing/env succeeded; guarded/idempotent)
   setup_dependencies "${served_apps[@]}"
+  if "$DEPS_OK"; then
+    ok "dependencies installed successfully"
+  else
+    warn "dependencies incomplete — see the warnings above."
+  fi
 
-  # summary
-  log ""
-  log "Status: '$slug' is served at https://$host"
-  log "Backend (Laravel) is served from the worktree and shares the main DB."
-  log ""
-  log "URLs:"
+  # Detail only under -v; the checks above already say what happened.
+  vlog ""
+  vlog "Status: '$slug' is served at https://$host"
+  vlog "Backend (Laravel) is served from the worktree and shares the main DB."
+  vlog "URLs:"
   for app in "${served_apps[@]}"; do
-    printf '    %-7s https://%s%s\n' "${app}:" "$host" "$(app_route "$app")"
+    vlog "$(printf '    %-7s https://%s%s' "${app}:" "$host" "$(app_route "$app")")"
   done
-  log ""
-  log "Start the frontend dev server(s) yourself (if not already running):"
-  for app in "${served_apps[@]}"; do
-    printf '    cd %q && yarn serve-%s\n' "$WT_FRONTEND" "$app"
+  vlog "Tear it all down again with: ws remove $slug"
+
+  # The payoff, last and unmissable: the URL you actually open + how to start it.
+  # Still printed on a degraded run — routing and envs are done, so the URL is
+  # real and the recovery command is exactly what you need.
+  _ws_landing_box "$host" "${served_apps[@]}"
+
+  # …but the exit code must carry the same truth the checks do. Otherwise a
+  # degraded run reports success and `ws serve && open <url>` walks into a
+  # broken app.
+  "$DEPS_OK" || exit 1
+}
+
+# Print the landing URL in a bordered box tinted with the `ws help` banner fade
+# (pink -> sky). Prefers admin — the usual destination, and the one $ADMIN_PATH
+# describes — falling back to the first served app so the box is never empty.
+_ws_landing_box() {
+  local host="$1"; shift
+  local -a served=("$@")
+  local label path app found=false
+
+  for app in ${served[@]+"${served[@]}"}; do
+    [[ "$app" == "admin" ]] && found=true
   done
-  log ""
-  log "Tear it all down again with: ws remove $slug"
+
+  if "$found"; then
+    label="ADMIN"; path="$ADMIN_PATH"
+  else
+    app="${served[0]:-}"
+    [[ -n "$app" ]] || return 0
+    label="$(printf '%s' "$app" | tr '[:lower:]' '[:upper:]')"
+    path="$(app_route "$app")"
+  fi
+
+  local url="https://${host}${path}"
+  local inner="  ${label}   ${url}  "
+  local w=${#inner}
+  local rule; rule="$(ws_rule '─' "$w")"
+
+  # Border fades across the box; the URL stays a solid, readable link. Padding is
+  # measured off the PLAIN string, so the ANSI/OSC-8 codes can't skew the width.
+  printf '\n  %s\n' "$(ws_grad "╭${rule}╮" "$(( w + 2 ))")"
+  if "$TTY"; then
+    printf '  %s│%s  %s%s%s   \033]8;;%s\033\\%s%s%s\033]8;;\033\\  %s│%s\n' \
+      "$WSM_GRAD_START" "$C_RESET" "$C_BOLD" "$WSM_GRAD_START" "$label" \
+      "$url" "$WSM_GRAD_END" "$url" "$C_RESET" "$WSM_GRAD_END" "$C_RESET"
+  else
+    printf '  │%s│\n' "$inner"
+  fi
+  printf '  %s\n' "$(ws_grad "╰${rule}╯" "$(( w + 2 ))")"
+
+  # That URL is dead until its dev server is up — serve deliberately doesn't
+  # start it, so hand over the exact command.
+  local key; key="$(printf '%s' "$label" | tr '[:upper:]' '[:lower:]')"
+  printf '\n  %sstart it with:%s cd %q && yarn serve-%s\n\n' \
+    "$C_DIM" "$C_RESET" "$WT_FRONTEND" "$key"
 }

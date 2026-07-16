@@ -94,15 +94,12 @@ cmd_list() {
 
   local cwd; cwd="$(pwd -P)"
 
-  # Collect workspace slugs: immediate subdirectories of the worktrees root.
-  local slugs=()
-  if [[ -d "$WORKSPACES_ROOT" ]]; then
-    local entry
-    for entry in "$WORKSPACES_ROOT"/*/; do
-      [[ -d "$entry" ]] || continue
-      slugs+=("$(basename "$entry")")
-    done
-  fi
+  # Collect workspace slugs via the shared helper — the row numbers printed
+  # here are what `ws open <N>` resolves, so both must see the same sequence.
+  local slugs=() slug_line
+  while IFS= read -r slug_line; do
+    slugs+=("$slug_line")
+  done < <(workspace_slugs)
 
   # Figure out which workspace the CLI is inside. Each workspace owns a few base
   # dirs (frontend, backend, and their parent); the LONGEST matching base wins,
@@ -132,19 +129,23 @@ cmd_list() {
     exit 0
   fi
 
-  # ---- build rows: col1 = color swatch / MAIN tag, col2 = name, col3 = link --
-  local -a r_key=() r_name=() r_badge_plain=() r_badge=() r_link=()
+  # ---- build rows: col1 = `ws open` index, col2 = color swatch / MAIN tag,
+  # col3 = name, col4 = link. MAIN gets no index (it has no workspace file).
+  local -a r_key=() r_idx=() r_name=() r_badge_plain=() r_badge=() r_link=()
 
   # MAIN first — identified by a MAIN tag (not a color), always served.
   r_key+=("MAIN")
+  r_idx+=("")
   r_name+=("$(_ws_main_label)")
   r_badge_plain+=("MAIN")
   r_badge+=("${C_BOLD}${C_CYAN}MAIN${C_RESET}")
   r_link+=("${BASE_DOMAIN}${ADMIN_PATH}")
 
-  local slug sw badge
+  local slug sw badge n=0
   for slug in ${slugs[@]+"${slugs[@]}"}; do
+    n=$((n + 1))
     r_key+=("$slug")
+    r_idx+=("$n")
     r_name+=("$slug")
     sw="$(_ws_swatch "$(_ws_color "$slug")")"
     if [[ -n "$sw" ]]; then badge="$sw"; else badge="${C_DIM}●${C_RESET}"; fi
@@ -156,17 +157,19 @@ cmd_list() {
   # Column widths from PLAIN text so ANSI / hyperlink codes don't skew alignment.
   # Long names are capped with an ellipsis so the table stays compact.
   local name_cap=50
-  local i len maxbadge=0 maxname=9      # 9 = len("WORKSPACE")
+  local i len maxbadge=0 maxname=9 idxw=1      # 9 = len("WORKSPACE")
   for i in "${!r_key[@]}"; do
     len=${#r_badge_plain[$i]}; (( len > maxbadge )) && maxbadge=$len
+    len=${#r_idx[$i]}; (( len > idxw )) && idxw=$len
     len=${#r_name[$i]}; (( len > name_cap )) && len=$name_cap
     (( len > maxname )) && maxname=$len
   done
 
-  # Header (col1 is the marker/color column, left unlabeled).
-  printf '%*s  %s%-*s  %s%s\n' \
-    $((2 + maxbadge)) "" \
-    "$C_DIM" "$maxname" "WORKSPACE" "SERVE URL" "$C_RESET"
+  # Header (the index column carries the `ws open <N>` numbers; the marker /
+  # color column stays unlabeled).
+  printf '  %s%*s %*s  %-*s  %s%s\n' \
+    "$C_DIM" "$idxw" "#" "$maxbadge" "" \
+    "$maxname" "WORKSPACE" "SERVE URL" "$C_RESET"
 
   # Rows: leading '*' marks the workspace containing the cwd. col2 is padded by
   # hand (not %-*s) because a truncated name carries a multi-byte ellipsis whose
@@ -201,8 +204,8 @@ cmd_list() {
       link="${C_DIM}—${C_RESET}"
     fi
 
-    printf '%s %s%*s  %s%*s  %s\n' \
-      "$curc" "${r_badge[$i]}" "$bpad" "" \
+    printf '%s %*s %s%*s  %s%*s  %s\n' \
+      "$curc" "$idxw" "${r_idx[$i]}" "${r_badge[$i]}" "$bpad" "" \
       "$name" "$pad" "" \
       "$link"
   done

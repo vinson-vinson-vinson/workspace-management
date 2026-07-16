@@ -233,6 +233,19 @@ workspace_file_for() { printf '%s' "$WORKSPACES_ROOT/$1/$1.code-workspace"; }
 # workspaces created before the file moved into the session dir.
 legacy_workspace_file_for() { printf '%s' "$ROOT_DIR/$1.code-workspace"; }
 
+# All workspace slugs (immediate subdirectories of WORKSPACES_ROOT), one per
+# line, in fixed glob order. `ws list` numbers this exact sequence and
+# `ws open <N>` indexes into it — both MUST use this helper so the indices
+# can never drift apart.
+workspace_slugs() {
+  local entry
+  [[ -d "$WORKSPACES_ROOT" ]] || return 0
+  for entry in "$WORKSPACES_ROOT"/*/; do
+    [[ -d "$entry" ]] || continue
+    printf '%s\n' "$(basename "$entry")"
+  done
+}
+
 # Echo the workspace slug for the current directory (first path component under
 # WORKSPACES_ROOT), or return 1 if the cwd isn't inside a workspace. No output on
 # failure so callers can print their own error (avoids exit-in-subshell).

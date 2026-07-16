@@ -41,6 +41,7 @@ ${C_BOLD}Usage${C_RESET}
 ${C_BOLD}Commands${C_RESET}
   ${C_GREEN}create${C_RESET} <slug> [options]   Create (or reopen) a workspace and open VS Code
   ${C_GREEN}list${C_RESET} [--quiet]            List all workspaces ${C_DIM}(default when no command given)${C_RESET}
+  ${C_GREEN}open${C_RESET} <N|slug>             Open a workspace in VS Code by its ${C_DIM}ws list${C_RESET} index
   ${C_GREEN}serve${C_RESET} [slug] [options]    Serve a workspace at its subdomain ${C_DIM}(defaults to cwd)${C_RESET}
   ${C_GREEN}remove${C_RESET} [slug] [options]   Tear a workspace down safely ${C_DIM}(defaults to cwd)${C_RESET}
   ${C_GREEN}sync${C_RESET}                     Refresh each window's Source Control repo list ${C_DIM}(auto on create/remove)${C_RESET}

@@ -9,6 +9,12 @@ when a release is tagged.
 
 ## [Unreleased]
 
+### Added
+- `ws open <N|slug>`: open a workspace's VS Code window by its `ws list` row
+  index (or slug) — just the editor, no other side effects. `ws list` gained
+  a `#` column with the row numbers; both commands enumerate workspaces
+  through one shared helper so the indices can't drift apart.
+
 ## [1.5.0] — 2026-07-16
 
 ### Added

@@ -7,7 +7,7 @@
 # being set before it is sourced.
 # -----------------------------------------------------------------------------
 
-WSM_VERSION="1.3.2"
+WSM_VERSION="1.4.0"
 
 # ------------------------------- colors -------------------------------------
 # Only emit ANSI when stdout is a terminal; piped/redirected output stays clean.

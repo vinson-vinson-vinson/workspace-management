@@ -58,6 +58,12 @@ slugify_name() {
 
 resolve_base_ref() {
   local repo="$1" branch="$2"
+  # USE_REMOTE_MAIN flips the preference: base on origin/<branch> (freshly
+  # fetched by cmd_create) instead of the local checkout, falling back to the
+  # local branch only when no remote-tracking ref exists.
+  if "$USE_REMOTE_MAIN" && git -C "$repo" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
+    printf 'origin/%s' "$branch"; return
+  fi
   if git -C "$repo" show-ref --verify --quiet "refs/heads/$branch"; then
     printf '%s' "$branch"; return
   fi
@@ -106,7 +112,10 @@ add_worktree() {
   fi
   vlog "Creating new branch '$branch' from '$base_ref' in $repo"
   BRANCH_ORIGIN="created from $base_ref"
-  run_quiet git -C "$repo" worktree add -b "$branch" "$worktree_path" "$base_ref"
+  # --no-track: when the base is origin/<base-branch> (USE_REMOTE_MAIN), git
+  # would otherwise set THAT as upstream and the feature branch would look like
+  # it pushes to main. No-op for a local base.
+  run_quiet git -C "$repo" worktree add --no-track -b "$branch" "$worktree_path" "$base_ref"
 }
 
 # Open the workspace in VS Code and print the milestone check — or, with
@@ -309,6 +318,23 @@ cmd_create() {
   frontend_worktree="$session_dir/$FRONTEND_DIR_NAME"
   backend_worktree="$session_dir/$BACKEND_DIR_NAME"
   workspace_file="$(workspace_file_for "$branch_slug")"
+
+  # USE_REMOTE_MAIN promises the LIVE remote: refresh the remote-tracking refs
+  # first, or origin/<base-branch> would just mean "as of the last fetch". A
+  # failed fetch (e.g. offline) degrades to that last-fetched state with a
+  # warning rather than aborting.
+  if "$USE_REMOTE_MAIN"; then
+    local fetch_ok=true
+    spin "fetching origin base branches"
+    run_quiet git -C "$FRONTEND_REPO" fetch origin "$FRONTEND_BASE_BRANCH" || fetch_ok=false
+    run_quiet git -C "$BACKEND_REPO" fetch origin "$BACKEND_BASE_BRANCH" || fetch_ok=false
+    if "$fetch_ok"; then
+      spin_ok "origin base branches fetched"
+    else
+      spin_stop
+      warn "fetch failed — branching from the last-fetched origin state instead."
+    fi
+  fi
 
   frontend_ref="$(resolve_base_ref "$FRONTEND_REPO" "$FRONTEND_BASE_BRANCH")"
   backend_ref="$(resolve_base_ref "$BACKEND_REPO" "$BACKEND_BASE_BRANCH")"

@@ -43,6 +43,13 @@ TASK_ID_PREFIX="CU"
 # (e.g. via the clickable name in `ws list`). Optional; defaults to false.
 NO_OPEN_AFTER_CREATE=false
 
+# Set to true to cut new workspace branches from the LIVE remote base branch:
+# `ws create` fetches origin/<base-branch> in both repos first and branches
+# from that, so workspaces never start from a stale local main. With false
+# (the default), branches are cut from your local base branch as it sits on
+# disk. Optional; defaults to false.
+USE_REMOTE_MAIN=false
+
 # ------------------------------ serving (ws serve) ---------------------------
 # `ws serve` makes a task worktree reachable at <sub>.$BASE_DOMAIN using Laravel
 # Valet's nginx + wildcard cert. If you don't use `ws serve` you can leave this

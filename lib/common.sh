@@ -202,6 +202,7 @@ load_config() {
   # Optional settings — defaulted here so configs predating them keep working
   # under `set -u`.
   NO_OPEN_AFTER_CREATE="${NO_OPEN_AFTER_CREATE:-false}"
+  USE_REMOTE_MAIN="${USE_REMOTE_MAIN:-false}"
 }
 
 # ------------------------- git / workspace helpers --------------------------

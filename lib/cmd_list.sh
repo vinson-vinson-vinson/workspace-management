@@ -1,7 +1,9 @@
 # shellcheck shell=bash
 # -----------------------------------------------------------------------------
-# lib/cmd_list.sh — `workspaces list`: list workspaces, star the current one,
-# and link each served workspace to its admin URL.
+# lib/cmd_list.sh — `workspaces list`: the wordmark banner over a box-drawing
+# table of all workspaces — # (the `ws open` index, starred for the current
+# workspace), color swatch + clickable name, serve URL. Piped output falls back
+# to plain aligned columns so scripts keep working.
 # -----------------------------------------------------------------------------
 
 cmd_list_usage() {
@@ -9,9 +11,9 @@ cmd_list_usage() {
 Usage:
   ws list [--quiet]
 
-Lists all workspaces under the worktrees root. Each line shows the workspace
-name, and — if it is being served — a link to its admin URL. The workspace you
-are currently inside is marked with a leading '*'.
+Lists all workspaces under the worktrees root. Each row shows the `ws open`
+index (the current workspace is starred), the workspace name (clickable:
+opens the VS Code workspace), and — if it is being served — its admin URL.
 
 Options:
   -q, --quiet   Print only the workspace names, one per line (script-friendly).
@@ -129,84 +131,115 @@ cmd_list() {
     exit 0
   fi
 
-  # ---- build rows: col1 = `ws open` index, col2 = color swatch / MAIN tag,
-  # col3 = name, col4 = link. MAIN gets no index (it has no workspace file).
-  local -a r_key=() r_idx=() r_name=() r_badge_plain=() r_badge=() r_link=()
+  # ---- build the table model --------------------------------------------
+  # Box-drawing table under the centered wordmark on a UTF-8 terminal, with a
+  # spinner while the model is collected (the per-row color/nginx/git lookups
+  # add up). The banner prints only after collection: centering it needs the
+  # final table width. Piped or byte-locale output falls back to plain
+  # aligned columns for scripts.
+  local fancy=false
+  "$TTY" && "$WS_UTF8" && fancy=true
+  "$fancy" && spin "loading workspaces"
 
-  # MAIN first — identified by a MAIN tag (not a color), always served.
-  r_key+=("MAIN")
-  r_idx+=("")
-  r_name+=("$(_ws_main_label)")
-  r_badge_plain+=("MAIN")
-  r_badge+=("${C_BOLD}${C_CYAN}MAIN${C_RESET}")
-  r_link+=("${BASE_DOMAIN}${ADMIN_PATH}")
+  # Parallel arrays: *_plain carries the width math (ANSI + OSC 8 escapes are
+  # zero display width but inflate ${#}), the styled twin is what's printed.
+  local -a r_key=() r_idx=() r_ws_plain=() r_ws=() r_url_plain=() r_url=()
+  local name_cap=50
 
-  local slug sw badge n=0
+  # MAIN first — index 0 (`ws open 0`), identified by a MAIN tag (not a
+  # swatch), always served. Its name links to MAIN_WORKSPACE_FILE when set.
+  local main_label main_name
+  main_label="$(_ws_main_label)"
+  main_name="${C_BOLD}${C_CYAN}MAIN${C_RESET} ${main_label}"
+  if "$TTY" && [[ -n "$MAIN_WORKSPACE_FILE" && -f "$MAIN_WORKSPACE_FILE" ]]; then
+    main_name="$(printf '\033]8;;file://%s\033\\%s\033]8;;\033\\' "$MAIN_WORKSPACE_FILE" "$main_name")"
+  fi
+  r_key+=("MAIN"); r_idx+=("0")
+  r_ws_plain+=("MAIN ${main_label}")
+  r_ws+=("$main_name")
+  r_url_plain+=("https://${BASE_DOMAIN}${ADMIN_PATH}")
+  r_url+=("$(_ws_link "${BASE_DOMAIN}${ADMIN_PATH}")")
+
+  local sw name url n=0
   for slug in ${slugs[@]+"${slugs[@]}"}; do
     n=$((n + 1))
-    r_key+=("$slug")
-    r_idx+=("$n")
-    r_name+=("$slug")
+    r_key+=("$slug"); r_idx+=("$n")
+    name="$slug"
+    (( ${#name} > name_cap )) && name="${name:0:name_cap-1}…"
     sw="$(_ws_swatch "$(_ws_color "$slug")")"
-    if [[ -n "$sw" ]]; then badge="$sw"; else badge="${C_DIM}●${C_RESET}"; fi
-    r_badge_plain+=("●")
-    r_badge+=("$badge")
-    r_link+=("$(_ws_admin_url "$slug")")
+    [[ -n "$sw" ]] || sw="${C_DIM}●${C_RESET}"
+    r_ws_plain+=("● ${name}")
+    r_ws+=("${sw} $(_ws_name_link "$slug" "$name")")
+    url="$(_ws_admin_url "$slug")"
+    if [[ -n "$url" ]]; then
+      r_url_plain+=("https://${url}")
+      r_url+=("$(_ws_link "$url")")
+    else
+      r_url_plain+=("—")
+      r_url+=("${C_DIM}—${C_RESET}")
+    fi
   done
 
-  # Column widths from PLAIN text so ANSI / hyperlink codes don't skew alignment.
-  # Long names are capped with an ellipsis so the table stays compact.
-  local name_cap=50
-  local i len maxbadge=0 maxname=9 idxw=1      # 9 = len("WORKSPACE")
+  # Current-workspace marker folded into the # cell: "*3" ("*0" for MAIN).
+  local -a r_no=()
+  local mark
   for i in "${!r_key[@]}"; do
-    len=${#r_badge_plain[$i]}; (( len > maxbadge )) && maxbadge=$len
-    len=${#r_idx[$i]}; (( len > idxw )) && idxw=$len
-    len=${#r_name[$i]}; (( len > name_cap )) && len=$name_cap
-    (( len > maxname )) && maxname=$len
+    mark=" "
+    [[ "$current_key" == "${r_key[$i]}" ]] && mark="*"
+    r_no+=("${mark}${r_idx[$i]}")
   done
 
-  # Header (the index column carries the `ws open <N>` numbers; the marker /
-  # color column stays unlabeled).
-  printf '  %s%*s %*s  %-*s  %s%s\n' \
-    "$C_DIM" "$idxw" "#" "$maxbadge" "" \
-    "$maxname" "WORKSPACE" "SERVE URL" "$C_RESET"
-
-  # Rows: leading '*' marks the workspace containing the cwd. col2 is padded by
-  # hand (not %-*s) because a truncated name carries a multi-byte ellipsis whose
-  # byte length would otherwise throw the alignment off.
-  local curc bpad link name dw pad
+  # ---- column widths (from PLAIN text) -----------------------------------
+  local idxw=1 wsw=9 urlw=9 len   # 9 = len("Workspace") / len("Serve URL")
   for i in "${!r_key[@]}"; do
-    if [[ "$current_key" == "${r_key[$i]}" ]]; then
-      curc="${C_BOLD}*${C_RESET}"
-    else
-      curc=' '
-    fi
-    bpad=$(( maxbadge - ${#r_badge_plain[$i]} ))
-
-    name="${r_name[$i]}"
-    if (( ${#name} > maxname )); then
-      name="${name:0:maxname-1}…"   # display width == maxname
-      dw=$maxname
-    else
-      dw=${#name}
-    fi
-    pad=$(( maxname - dw ))
-
-    # Linkify AFTER truncation/padding math — the OSC 8 escapes are zero-width
-    # but would inflate ${#name}. MAIN has no .code-workspace, so it stays plain.
-    if [[ "${r_key[$i]}" != "MAIN" ]]; then
-      name="$(_ws_name_link "${r_key[$i]}" "$name")"
-    fi
-
-    if [[ -n "${r_link[$i]}" ]]; then
-      link="$(_ws_link "${r_link[$i]}")"
-    else
-      link="${C_DIM}—${C_RESET}"
-    fi
-
-    printf '%s %*s %s%*s  %s%*s  %s\n' \
-      "$curc" "$idxw" "${r_idx[$i]}" "${r_badge[$i]}" "$bpad" "" \
-      "$name" "$pad" "" \
-      "$link"
+    len=${#r_no[$i]};        (( len > idxw )) && idxw=$len
+    len=${#r_ws_plain[$i]};  (( len > wsw ))  && wsw=$len
+    len=${#r_url_plain[$i]}; (( len > urlw )) && urlw=$len
   done
+
+  if ! "$fancy"; then
+    # Plain fallback (piped / non-UTF-8 locale): same data, no box. Padded by
+    # hand — printf's %-*s width counts BYTES, and ●/— are multibyte.
+    printf '%*s  %s%*s  %s\n' "$idxw" "#" "WORKSPACE" $((wsw - 9)) "" "SERVE URL"
+    for i in "${!r_key[@]}"; do
+      printf '%*s  %s%*s  %s\n' \
+        "$idxw" "${r_no[$i]}" \
+        "${r_ws_plain[$i]}" $((wsw - ${#r_ws_plain[$i]})) "" \
+        "${r_url_plain[$i]}"
+    done
+    return 0
+  fi
+
+  spin_stop
+
+  # ---- render: banner spanning the box width, then the box ----------------
+  # Box width = 3 cells with one space of padding each side (+6) plus the 4
+  # vertical borders. The banner centers the wordmark over that width, with
+  # its gradient rules cascading out to both box edges.
+  local box_w=$((idxw + wsw + urlw + 10))
+  wsm_banner 2 "$box_w"
+  printf '\n'
+
+  local seg1 seg2 seg3 sep="${C_DIM}│${C_RESET}"
+  seg1="$(ws_rule '─' $((idxw + 2)))"
+  seg2="$(ws_rule '─' $((wsw + 2)))"
+  seg3="$(ws_rule '─' $((urlw + 2)))"
+
+  printf '  %s╭%s┬%s┬%s╮%s\n' "$C_DIM" "$seg1" "$seg2" "$seg3" "$C_RESET"
+  printf '  %s│ %-*s │ %-*s │ %-*s │%s\n' \
+    "$C_DIM" "$idxw" "#" "$wsw" "Workspace" "$urlw" "Serve URL" "$C_RESET"
+  printf '  %s├%s┼%s┼%s┤%s\n' "$C_DIM" "$seg1" "$seg2" "$seg3" "$C_RESET"
+
+  local pad1 pad2 pad3
+  for i in "${!r_key[@]}"; do
+    pad1=$((idxw - ${#r_no[$i]}))
+    pad2=$((wsw - ${#r_ws_plain[$i]}))
+    pad3=$((urlw - ${#r_url_plain[$i]}))
+    printf '  %s %s%*s %s %s%*s %s %s%*s %s\n' \
+      "$sep" "${r_no[$i]}" "$pad1" "" \
+      "$sep" "${r_ws[$i]}" "$pad2" "" \
+      "$sep" "${r_url[$i]}" "$pad3" "" \
+      "$sep"
+  done
+  printf '  %s╰%s┴%s┴%s╯%s\n' "$C_DIM" "$seg1" "$seg2" "$seg3" "$C_RESET"
 }

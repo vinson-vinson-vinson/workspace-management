@@ -112,7 +112,7 @@ Everything is one command, `workspaces` (alias `ws`), with subcommands:
 | --- | --- |
 | `ws create <slug>` | Create (or reopen) a workspace: add both worktrees, write a `.code-workspace`, open VS Code. On open, VS Code auto-runs `ws serve` and then `yarn serve-<app>` per default app, each in its own terminal; `--neanderthal` skips those tasks. |
 | `ws list` (or bare `ws`) | List all workspaces, star the one you're in, link each served one to its landing URL. The `#` column numbers the rows for `ws open`. |
-| `ws open <N\|slug>` | Open a workspace's VS Code window by its `ws list` index (or slug). Just the editor — no serving, no side effects. |
+| `ws open <N\|slug>` | Open a workspace's VS Code window by its `ws list` index (or slug). Index 0 (or `MAIN`) opens the main workspace (`MAIN_WORKSPACE_FILE`, or both main repos). Just the editor — no serving, no side effects. |
 | `ws serve [slug]` | Make a workspace reachable at `<sub>.<domain>` via Valet/nginx: rewrite envs, write the nginx block, install deps. Slug defaults to the current directory. Does **not** start dev servers — it prints the `yarn serve-*` commands. |
 | `ws remove [slug]` | Tear a workspace down safely: revert routing, remove worktrees, delete branches, clean the session dir. Refuses on unpushed work unless `--force`. Slug defaults to cwd. |
 | `ws trust` | One-time sudoers rule (like `valet trust`) so `ws serve` can test/reload nginx without password prompts. Covers exactly `nginx -t` and `nginx -s reload`; never stores the password. `--revoke` removes it. |

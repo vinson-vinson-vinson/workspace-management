@@ -9,6 +9,24 @@ when a release is tagged.
 
 ## [Unreleased]
 
+### Added
+- `ws open 0` (or `ws open MAIN`) opens the main workspace: the new optional
+  `MAIN_WORKSPACE_FILE` config names its .code-workspace; without it, both
+  main repos open together in one new VS Code window. `ws list` numbers the
+  MAIN row 0 and links its name to that file.
+
+### Changed
+- The in-tool wordmark is now "WORKSPACES" (one banner row instead of the
+  stacked "WORKSPACE MANAGEMENT" two-row block) — the tool goes by the
+  command's own name; the repo, sudoers file, and XDG config path keep the
+  long name.
+- `ws list` got a redesign: the wordmark banner over a rounded box-drawing
+  table (`#` / `Workspace` / `Serve URL`), with a spinner while the rows are
+  collected. The color swatch moved into the Workspace column next to the
+  clickable name, and the current workspace is starred in the `#` column.
+  Piped output keeps the plain aligned column format (and `--quiet` is
+  untouched), so scripts keep working.
+
 ## [1.7.0] — 2026-07-16
 
 ### Added

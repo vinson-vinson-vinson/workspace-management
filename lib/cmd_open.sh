@@ -12,13 +12,31 @@ Usage:
 Opens the workspace's .code-workspace in VS Code. N is the row index printed
 by `ws list` (the # column); a workspace slug works too.
 
+Index 0 (or "MAIN") is the main workspace: it opens MAIN_WORKSPACE_FILE from
+config.sh, or — if unset/missing — both main repos in one new VS Code window.
+
 Options:
   -h, --help    Show this help.
 
 Examples:
+  ws open 0
   ws open 2
   ws open CU-1234_my-feature
 USAGE
+}
+
+# The MAIN workspace (`ws open 0`): MAIN_WORKSPACE_FILE from the config when
+# it exists, otherwise both main repos together in one new VS Code window.
+open_main_workspace() {
+  if [[ -n "$MAIN_WORKSPACE_FILE" && -f "$MAIN_WORKSPACE_FILE" ]]; then
+    code -n "$MAIN_WORKSPACE_FILE"
+    ok "VS Code opened (MAIN — $(basename "$MAIN_WORKSPACE_FILE"))"
+    return 0
+  fi
+  [[ -n "$MAIN_WORKSPACE_FILE" ]] \
+    && warn "MAIN_WORKSPACE_FILE not found ($MAIN_WORKSPACE_FILE) — opening the repos directly."
+  code -n "$FRONTEND_REPO" "$BACKEND_REPO"
+  ok "VS Code opened (MAIN — $FRONTEND_DIR_NAME + $BACKEND_DIR_NAME)"
 }
 
 cmd_open() {
@@ -42,16 +60,24 @@ cmd_open() {
 
   local slug
   if [[ "$target" =~ ^[0-9]+$ ]]; then
-    # Index form: resolve against the same fixed sequence `ws list` numbers.
-    # 10# guards leading zeros ("08" would otherwise parse as bad octal).
+    # Index form: resolve against the same fixed sequence `ws list` numbers;
+    # 0 is MAIN. 10# guards leading zeros ("08" would otherwise parse as bad
+    # octal).
     local n=$((10#$target))
+    if (( n == 0 )); then
+      open_main_workspace
+      return 0
+    fi
     local slugs=() line
     while IFS= read -r line; do slugs+=("$line"); done < <(workspace_slugs)
     if (( n < 1 || n > ${#slugs[@]} )); then
-      err "Index $n is out of range — 'ws list' shows ${#slugs[@]} workspace(s)."
+      err "Index $n is out of range — 'ws list' shows ${#slugs[@]} workspace(s) (0 = MAIN)."
       exit 1
     fi
     slug="${slugs[n - 1]}"
+  elif [[ "$target" == "MAIN" || "$target" == "main" ]]; then
+    open_main_workspace
+    return 0
   else
     slug="$target"
     if [[ ! -d "$WORKSPACES_ROOT/$slug" ]]; then

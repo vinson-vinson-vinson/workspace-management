@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # -----------------------------------------------------------------------------
-# workspace-management configuration
+# workspaces configuration
 #
 # Copy this file to `config.sh` and edit the values for your machine:
 #
@@ -25,6 +25,11 @@ BACKEND_REPO="$ROOT_DIR/$BACKEND_DIR_NAME"
 
 # Where session worktrees are created (one sub-directory per workspace slug).
 WORKSPACES_ROOT="$ROOT_DIR/workspaces"
+
+# .code-workspace file for the MAIN workspace — what `ws open 0` opens (and
+# where the MAIN row in `ws list` links to). If unset or missing, `ws open 0`
+# opens both main repos in one new VS Code window instead. Optional.
+# MAIN_WORKSPACE_FILE="$ROOT_DIR/full-stack.code-workspace"
 
 # Base branch each brand-new worktree branch is cut from, per repo.
 FRONTEND_BASE_BRANCH="main"

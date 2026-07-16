@@ -71,6 +71,47 @@ ws_rule() {
   printf '%s' "$out"
 }
 
+# ---------------------------- wordmark banner --------------------------------
+# "WORKSPACES" in the Calvin S box-drawing font (3 rows, 3 cols per glyph).
+# The tool goes by the command's own name; the repo keeps its longer one.
+# Shown by `ws help` and above the `ws list` table.
+_WSM_L1='╦ ╦╔═╗╦═╗╦╔═╔═╗╔═╗╔═╗╔═╗╔═╗╔═╗'
+_WSM_L2='║║║║ ║╠╦╝╠╩╗╚═╗╠═╝╠═╣║  ╠═ ╚═╗'
+_WSM_L3='╚╩╝╚═╝╩╚═╩ ╩╚═╝╩  ╩ ╩╚═╝╚═╝╚═╝'
+
+_WSM_RAMP=30
+
+# Print the WORKSPACES wordmark. Optional $1: left indent (default 2).
+# Optional $2: total width — when wider than the wordmark, a racing stripe of
+# '═' flanks the middle row on both sides: it starts/ends halfway between the
+# outer edge and the mark and runs up to the mark, and the pink->sky fade
+# spans the WHOLE width (wordmark included) so stripe and mark read as one.
+wsm_banner() {
+  local indent="${1:-2}" width="${2:-$_WSM_RAMP}" l pad
+  pad="$(ws_rule ' ' "$indent")"
+  # Flank widths (2-space gap on both sides of the mark); the right one takes
+  # the integer-division remainder so the row always fills exactly $width.
+  local flank=$(( (width - _WSM_RAMP) / 2 - 2 ))
+  if (( flank < 4 )); then
+    printf '\n'
+    for l in "$_WSM_L1" "$_WSM_L2" "$_WSM_L3"; do
+      printf '%s%s\n' "$pad" "$(ws_grad "$l" "$_WSM_RAMP")"
+    done
+    return 0
+  fi
+  local flank_r=$((width - _WSM_RAMP - 4 - flank))
+  # Inner half of each flank: from the halfway point up to the mark.
+  local stripe_l=$((flank / 2)) stripe_r=$((flank_r / 2))
+  local row1 row2 row3
+  row1="$(ws_rule ' ' "$flank")  ${_WSM_L1}"
+  row2="$(ws_rule ' ' $((flank - stripe_l)))$(ws_rule '═' "$stripe_l")  ${_WSM_L2}  $(ws_rule '═' "$stripe_r")"
+  row3="$(ws_rule ' ' "$flank")  ${_WSM_L3}"
+  printf '\n'
+  for l in "$row1" "$row2" "$row3"; do
+    printf '%s%s\n' "$pad" "$(ws_grad "$l" "$width")"
+  done
+}
+
 # ------------------------------- logging ------------------------------------
 # The dispatcher sets LOG_PREFIX to the running subcommand, so messages read
 # like "[serve] …" / "[create] …".
@@ -208,6 +249,7 @@ load_config() {
   NO_OPEN_AFTER_CREATE="${NO_OPEN_AFTER_CREATE:-false}"
   USE_REMOTE_MAIN="${USE_REMOTE_MAIN:-false}"
   REQUIRE_CONFIRM_REMOVE="${REQUIRE_CONFIRM_REMOVE:-true}"
+  MAIN_WORKSPACE_FILE="${MAIN_WORKSPACE_FILE:-}"
   # Array default, bash-3.2/set -u safe: keeps an unset EXTRA_WORKSPACE_FOLDERS
   # from blowing up expansion in configs predating the setting.
   EXTRA_WORKSPACE_FOLDERS=(${EXTRA_WORKSPACE_FOLDERS[@]+"${EXTRA_WORKSPACE_FOLDERS[@]}"})

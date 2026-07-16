@@ -3,33 +3,7 @@
 # lib/cmd_help.sh — `workspaces help`: colorful banner + command overview.
 # -----------------------------------------------------------------------------
 
-# ---------------------------- wordmark banner --------------------------------
-# "WORKSPACE" stacked over "MANAGEMENT" in the Calvin S box-drawing font
-# (3 rows per word, 3 cols per glyph — the whole name in 2 rows at 30 cols).
-_WSM_L1='╦ ╦╔═╗╦═╗╦╔═╔═╗╔═╗╔═╗╔═╗╔═╗'
-_WSM_L2='║║║║ ║╠╦╝╠╩╗╚═╗╠═╝╠═╣║  ╠═ '
-_WSM_L3='╚╩╝╚═╝╩╚═╩ ╩╚═╝╩  ╩ ╩╚═╝╚═╝'
-_WSM_L4='╔╦╗╔═╗╔╗╔╔═╗╔═╗╔═╗╔╦╗╔═╗╔╗╔╔╦╗'
-_WSM_L5='║║║╠═╣║║║╠═╣║ ╦╠═ ║║║╠═ ║║║ ║ '
-_WSM_L6='╩ ╩╩ ╩╝╚╝╩ ╩╚═╝╚═╝╩ ╩╚═╝╝╚╝ ╩ '
-
-# Both rows share one ramp (the width of the widest row) so the fade lines up
-# vertically and the two words read as one wordmark. The palette and the fade
-# itself live in common.sh — `ws serve`'s summary box uses the same accent.
-_WSM_RAMP=30
-
-wsm_banner() {
-  local l
-  printf '\n'
-  for l in "$_WSM_L1" "$_WSM_L2" "$_WSM_L3" "$_WSM_L4" "$_WSM_L5" "$_WSM_L6"; do
-    printf '  %s\n' "$(ws_grad "$l" "$_WSM_RAMP")"
-  done
-  if "$TTY"; then
-    printf '  \033[2;38;2;170;140;200mper-task git worktree dev workspaces%s\n' "$C_RESET"
-  else
-    printf '  per-task git worktree dev workspaces\n'
-  fi
-}
+# The wordmark banner (wsm_banner) lives in common.sh — `ws list` shows it too.
 
 cmd_help() {
   wsm_banner

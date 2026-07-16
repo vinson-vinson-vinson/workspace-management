@@ -50,6 +50,14 @@ NO_OPEN_AFTER_CREATE=false
 # disk. Optional; defaults to false.
 USE_REMOTE_MAIN=false
 
+# Extra folders added to every workspace's VS Code window — e.g. shared local
+# packages you regularly edit alongside task work. Absolute paths, appended
+# after the two worktree folders. Paths that don't exist on this machine are
+# skipped with a warning. Optional; defaults to empty.
+EXTRA_WORKSPACE_FOLDERS=(
+  # "$HOME/Projects/packages/laravel-integrations"
+)
+
 # ------------------------------ serving (ws serve) ---------------------------
 # `ws serve` makes a task worktree reachable at <sub>.$BASE_DOMAIN using Laravel
 # Valet's nginx + wildcard cert. If you don't use `ws serve` you can leave this

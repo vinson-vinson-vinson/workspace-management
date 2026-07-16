@@ -217,11 +217,23 @@ write_workspace_file() {
     tasks_block="$(emit_workspace_tasks "$frontend_dir" "$backend_dir")"$'\n'
     allow_tasks=$'\n    "task.allowAutomaticTasks": "on",'
   fi
+  # Shared local packages etc. from the config, appended as extra workspace
+  # folders (absolute paths — they live outside the session dir). Paths missing
+  # on this machine are skipped so a config written elsewhere can't produce
+  # dead folders.
+  local extra_folders="" extra
+  for extra in ${EXTRA_WORKSPACE_FOLDERS[@]+"${EXTRA_WORKSPACE_FOLDERS[@]}"}; do
+    if [[ -d "$extra" ]]; then
+      extra_folders+=$',\n    { "path": "'"$extra"'" }'
+    else
+      warn "extra workspace folder not found (skipped): $extra"
+    fi
+  done
   cat >"$workspace_file" <<EOF
 {
   "folders": [
     { "path": "$frontend_dir" },
-    { "path": "$backend_dir" }
+    { "path": "$backend_dir" }$extra_folders
   ],
 ${tasks_block}  "settings": {${allow_tasks}
     "git.autoRepositoryDetection": false,

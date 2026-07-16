@@ -7,7 +7,7 @@
 # being set before it is sourced.
 # -----------------------------------------------------------------------------
 
-WSM_VERSION="1.3.1"
+WSM_VERSION="1.3.2"
 
 # ------------------------------- colors -------------------------------------
 # Only emit ANSI when stdout is a terminal; piped/redirected output stays clean.
@@ -203,6 +203,9 @@ load_config() {
   # under `set -u`.
   NO_OPEN_AFTER_CREATE="${NO_OPEN_AFTER_CREATE:-false}"
   USE_REMOTE_MAIN="${USE_REMOTE_MAIN:-false}"
+  # Array default, bash-3.2/set -u safe: keeps an unset EXTRA_WORKSPACE_FOLDERS
+  # from blowing up expansion in configs predating the setting.
+  EXTRA_WORKSPACE_FOLDERS=(${EXTRA_WORKSPACE_FOLDERS[@]+"${EXTRA_WORKSPACE_FOLDERS[@]}"})
 }
 
 # ------------------------- git / workspace helpers --------------------------

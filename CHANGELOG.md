@@ -9,6 +9,8 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-07-16
+
 ### Added
 - `ws create <name> [BASE_BRANCH]`: base the new workspace branches on an
   existing branch instead of the configured base — e.g. to stack follow-up
@@ -122,7 +124,8 @@ when a release is tagged.
   own `<sub>.anny.dev` subdomain via Laravel Valet/nginx, Cognitor key
   seeding, `install.sh`, and Homebrew tap packaging.
 
-[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v1.3.2...v1.4.0
 [1.3.2]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v1.3.0...v1.3.1

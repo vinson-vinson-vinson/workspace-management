@@ -9,6 +9,8 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [1.6.0] — 2026-07-16
+
 ### Added
 - `ws open <N|slug>`: open a workspace's VS Code window by its `ws list` row
   index (or slug) — just the editor, no other side effects. `ws list` gained
@@ -130,7 +132,8 @@ when a release is tagged.
   own `<sub>.anny.dev` subdomain via Laravel Valet/nginx, Cognitor key
   seeding, `install.sh`, and Homebrew tap packaging.
 
-[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v1.3.2...v1.4.0
 [1.3.2]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v1.3.1...v1.3.2

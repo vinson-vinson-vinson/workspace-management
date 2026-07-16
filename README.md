@@ -31,9 +31,8 @@ adapts to your own repos, branches, domain, and app layout.
 
 ## Install
 
-Two ways in. Either way you get two command names — `workspaces` and its short
-alias **`ws`** — and you supply a machine-specific `config.sh` (see
-[Configuration](#configuration)).
+You get two command names — `workspaces` and its short alias **`ws`** — and you
+supply a machine-specific `config.sh` (see [Configuration](#configuration)).
 
 Before it works, edit at least these in `config.sh`: **`ROOT_DIR`** (where your
 two repos live), **`WORKSPACES_ROOT`** (where session worktrees get created,
@@ -41,24 +40,6 @@ usually `$ROOT_DIR/workspaces`), and — if you use `ws serve` — **`BASE_DOMAI
 Use a reserved dev TLD like `.test` (e.g. `anny.test`) rather than `.dev`: `.dev`
 is a real, HSTS-preloaded TLD and browsers force HTTPS on it, which fights local
 serving.
-
-### 1. Homebrew (team install)
-
-```bash
-brew tap vinson-vinson-vinson/tap git@github.com:vinson-vinson-vinson/homebrew-tap.git
-brew install vinson-vinson-vinson/tap/workspace-management
-
-# One-time config (brew prints this in its caveats):
-mkdir -p ~/.config/workspace-management
-cp "$(brew --prefix)/share/workspace-management/config.example.sh" \
-   ~/.config/workspace-management/config.sh
-$EDITOR ~/.config/workspace-management/config.sh
-```
-
-`brew upgrade workspace-management` pulls new releases. See
-[PACKAGING.md](PACKAGING.md) for how releases are cut.
-
-### 2. Git clone
 
 ```bash
 git clone git@github.com:vinson-vinson-vinson/workspace-management.git
@@ -85,7 +66,7 @@ finds its config in this order:
 
 1. `$WSM_CONFIG`, if set (explicit override)
 2. `config.sh` next to the `workspaces` command (git-clone / `install.sh` layout)
-3. `~/.config/workspace-management/config.sh` (`$XDG_CONFIG_HOME`; Homebrew layout)
+3. `~/.config/workspace-management/config.sh` (`$XDG_CONFIG_HOME`)
 
 ```bash
 WSM_CONFIG=~/dotfiles/wsm.config.sh ws list   # override anytime

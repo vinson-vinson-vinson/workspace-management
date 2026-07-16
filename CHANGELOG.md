@@ -9,6 +9,11 @@ when a release is tagged.
 
 ## [Unreleased]
 
+### Removed
+- Homebrew packaging (`packaging/`, `PACKAGING.md`, README install section):
+  the tap was unused — everyone installs via git clone + `install.sh`. The
+  `vinson-vinson-vinson/homebrew-tap` repo is orphaned by this and can be deleted.
+
 ## [1.4.0] — 2026-07-16
 
 ### Added

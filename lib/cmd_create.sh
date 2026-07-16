@@ -89,19 +89,19 @@ add_worktree() {
   if branch_exists_local "$repo" "$branch"; then
     vlog "Reusing existing local branch '$branch' in $repo"
     BRANCH_ORIGIN="reused existing local branch"
-    run_cmd git -C "$repo" worktree add "$worktree_path" "$branch"
+    run_quiet git -C "$repo" worktree add "$worktree_path" "$branch"
     return
   fi
   if remote_branch_exists "$repo" "$branch"; then
     vlog "Checking out existing remote branch 'origin/$branch' in $repo"
     BRANCH_ORIGIN="checked out from origin"
-    run_cmd git -C "$repo" fetch origin "$branch"
-    run_cmd git -C "$repo" worktree add --track -b "$branch" "$worktree_path" "origin/$branch"
+    run_quiet git -C "$repo" fetch origin "$branch"
+    run_quiet git -C "$repo" worktree add --track -b "$branch" "$worktree_path" "origin/$branch"
     return
   fi
   vlog "Creating new branch '$branch' from '$base_ref' in $repo"
   BRANCH_ORIGIN="created from $base_ref"
-  run_cmd git -C "$repo" worktree add -b "$branch" "$worktree_path" "$base_ref"
+  run_quiet git -C "$repo" worktree add -b "$branch" "$worktree_path" "$base_ref"
 }
 
 open_workspace() {
@@ -281,10 +281,13 @@ cmd_create() {
 
   run_cmd mkdir -p "$session_dir"
 
+  # Can be slow: may fetch from origin before adding each worktree.
+  spin "creating worktrees"
   add_worktree "$FRONTEND_REPO" "$branch_slug" "$frontend_worktree" "$frontend_ref"
   created_frontend=true
   add_worktree "$BACKEND_REPO" "$branch_slug" "$backend_worktree" "$backend_ref"
   created_backend=true
+  spin_stop
   # Both repos take the same slug, so BRANCH_ORIGIN from the last add_worktree
   # describes both.
   ok "branches ${BRANCH_ORIGIN} ($branch_slug)"

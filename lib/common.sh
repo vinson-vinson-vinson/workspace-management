@@ -81,6 +81,80 @@ vlog() { "$VERBOSE" && log "$@"; return 0; }
 err()  { printf '[%s] ERROR: %s\n' "$LOG_PREFIX" "$*" >&2; }
 warn() { printf '[%s] WARN: %s\n' "$LOG_PREFIX" "$*" >&2; }
 
+# ------------------------------- spinner ------------------------------------
+# Shows "<spinner> doing the thing" while a step runs, then replaces that line
+# in place with the "✓ thing done" check. Usage:
+#
+#     spin "removing worktrees"
+#     ...work...
+#     spin_ok "worktrees removed"        # clears the spinner, prints the check
+#
+# Deliberately inert unless stdout is a TTY: piped output would otherwise fill
+# with \r frames. Also inert under -v, where step narration prints freely and
+# would shred a single redrawn line. In both cases spin_ok still prints its ✓,
+# so callers need no branching.
+if "$WS_UTF8"; then
+  _WS_SPIN_FRAMES=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
+else
+  _WS_SPIN_FRAMES=('|' '/' '-' '\')
+fi
+_WS_SPIN_PID=""
+
+_ws_spin_active() { "$TTY" && ! "$VERBOSE" && ! "$DRY_RUN"; }
+
+spin() {
+  _WS_SPIN_MSG="$1"
+  _ws_spin_active || return 0
+  spin_stop                      # never leave two spinners racing one line
+  printf '\033[?25l'             # hide cursor; restored by spin_stop
+  (
+    local i=0 n=${#_WS_SPIN_FRAMES[@]}
+    while :; do
+      printf '\r\033[2K  %s%s%s %s' \
+        "$C_CYAN" "${_WS_SPIN_FRAMES[i % n]}" "$C_RESET" "$_WS_SPIN_MSG"
+      i=$((i + 1))
+      sleep 0.08
+    done
+  ) &
+  _WS_SPIN_PID=$!
+}
+
+# Kill the spinner and wipe its line. Safe to call when none is running, so
+# error paths can call it unconditionally before printing.
+spin_stop() {
+  [[ -n "$_WS_SPIN_PID" ]] || return 0
+  # `|| true` on both: if the spinner already exited, kill/wait return non-zero
+  # and `set -e` would abort the caller mid-step — with the cursor still hidden.
+  kill "$_WS_SPIN_PID" 2>/dev/null || true
+  wait "$_WS_SPIN_PID" 2>/dev/null || true
+  _WS_SPIN_PID=""
+  printf '\r\033[2K\033[?25h'    # clear line, show cursor
+  return 0
+}
+
+# Stop the spinner and replace its line with the ✓ check.
+spin_ok() { spin_stop; ok "${1:-$_WS_SPIN_MSG}"; }
+
+# A stray spinner would leave the cursor hidden and a background loop running.
+# INT/TERM only — an EXIT trap here would be clobbered by cmd_create's own.
+trap 'spin_stop; exit 130' INT
+trap 'spin_stop; exit 143' TERM
+
+# Run a command with its output hidden, so it can't shred the spinner line.
+# Output is shown under -v, or on failure (where it's the error message and must
+# never be swallowed). Mirrors run_cmd's dry-run behaviour.
+run_quiet() {
+  if "$DRY_RUN"; then printf '[dry-run] %s\n' "$*"; return 0; fi
+  if "$VERBOSE"; then "$@"; return $?; fi
+  local out status=0
+  out="$("$@" 2>&1)" || status=$?
+  if [[ $status -ne 0 ]]; then
+    spin_stop
+    printf '%s\n' "$out" >&2
+  fi
+  return $status
+}
+
 # --------------------------- shared flag defaults ---------------------------
 # Each subcommand parses whatever subset it supports; these defaults keep the
 # helpers below safe under `set -u` before parsing runs.
@@ -194,16 +268,18 @@ PY
 # worktrees) and hides the other workspaces' worktrees and the main clones.
 # Idempotent; safe to run anytime. Called by create/remove and `ws sync`.
 #
-# Pass "announce" (as `ws sync` does) to end with a ✓ summary. Called as a side
-# effect of create/remove it stays quiet — the sync isn't the headline there —
-# but warnings still surface either way.
+# Always its own spinner + check step. It shells out to python3 once per
+# workspace, which is slow enough to look like a hang if it hides inside a
+# neighbouring step's spinner.
 sync_scm_ignores() {
-  local announce="${1:-}"
   if "$DRY_RUN"; then
-    printf '[dry-run] re-sync VS Code SCM ignore-lists across all workspaces\n'
+    printf '[dry-run] re-sync VS Code Source Control ignore-lists across all workspaces\n'
     return 0
   fi
+  # Silent work (nothing on stdout) — spinner-shaped.
+  spin "syncing Source Control repo lists"
   if ! command -v python3 >/dev/null 2>&1; then
+    spin_stop
     warn "python3 not found — skipping SCM ignore-list sync (run 'ws sync' after installing it)."
     return 0
   fi
@@ -246,11 +322,8 @@ sync_scm_ignores() {
       warn "SCM sync: failed to update $wf (left unchanged)"
     fi
   done
-  if [[ "$announce" == "announce" ]]; then
-    ok "synced $synced workspace(s)"
-  else
-    vlog "Synced VS Code SCM ignore-lists for $synced workspace(s)."
-  fi
+  vlog "Synced VS Code Source Control ignore-lists for $synced workspace(s)."
+  spin_ok "Source Control repo lists synced ($synced workspace(s))"
 }
 
 # Derive a DNS-safe subdomain label from a slug: the task id for a task slug

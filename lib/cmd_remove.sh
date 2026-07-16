@@ -59,14 +59,18 @@ revert_serve_setup() {
     return 0
   fi
 
-  # Visible, like serve's: sudo is about to prompt and should say why.
+  # Visible, like serve's: sudo is about to prompt and should say why. NOTE: no
+  # spinner around sudo — it would fight the password prompt for the line.
   log "Requesting sudo (needed to reload nginx)…"
   sudo -v || { err "sudo is required to reload nginx."; exit 1; }
+
+  spin "reverting routing"
   rm -f "$conf"
   if run_nginx -t && run_nginx -s reload; then
     vlog "Removed nginx block and reloaded nginx."
-    ok "routing reverted ($host)"
+    spin_ok "routing reverted ($host)"
   else
+    spin_stop
     warn "nginx reload failed after removing $conf — check the config manually."
   fi
 }
@@ -157,10 +161,10 @@ remove_worktree() {
     # vendor, copied .env). The session-dir rm -rf and `git worktree prune`
     # finish the cleanup if this can't.
     if "$FORCE"; then
-      run_cmd git -C "$repo" worktree remove -f "$worktree_path" \
+      run_quiet git -C "$repo" worktree remove -f "$worktree_path" \
         || warn "git worktree remove failed for $worktree_path; will clean up directly."
     else
-      run_cmd git -C "$repo" worktree remove "$worktree_path" \
+      run_quiet git -C "$repo" worktree remove "$worktree_path" \
         || warn "git worktree remove failed for $worktree_path; retry with --force or push your work."
     fi
   else
@@ -178,7 +182,9 @@ remove_local_branch() {
   fi
   if git -C "$repo" show-ref --verify --quiet "refs/heads/$branch"; then
     vlog "Deleting local $label branch: $branch"
-    run_cmd git -C "$repo" branch -D "$branch"
+    # run_quiet: `git branch -D` prints "Deleted branch …", which would shred
+    # the spinner's redrawn line.
+    run_quiet git -C "$repo" branch -D "$branch"
   else
     vlog "No local $label branch '$branch'. Skipping."
   fi
@@ -258,13 +264,19 @@ cmd_remove() {
 
   revert_serve_setup "$slug"
 
+  spin "removing worktrees"
   remove_worktree "$FRONTEND_REPO" "$frontend_worktree" "Frontend"
   remove_worktree "$BACKEND_REPO" "$backend_worktree" "Backend"
-  ok "worktrees removed"
+  spin_ok "worktrees removed"
 
+  spin "deleting branches"
   remove_local_branch "$FRONTEND_REPO" "$slug" "frontend"
   remove_local_branch "$BACKEND_REPO" "$slug" "backend"
-  ok "branches deleted"
+  spin_ok "branches deleted"
+
+  # Deleting the session dir is the slow part: a served workspace holds a cloned
+  # vendor and an installed node_modules — tens of thousands of small files.
+  spin "deleting workspace files"
 
   if [[ -d "$session_dir" ]]; then
     if [[ -z "$(ls -A "$session_dir" 2>/dev/null)" ]]; then
@@ -290,12 +302,13 @@ cmd_remove() {
   done
   "$removed_wf" || vlog "No workspace file found. Skipping."
 
-  run_cmd git -C "$FRONTEND_REPO" worktree prune
-  run_cmd git -C "$BACKEND_REPO" worktree prune
-
-  # Refresh the remaining workspaces' SCM ignore-lists (drop this workspace's repos).
-  sync_scm_ignores
+  run_quiet git -C "$FRONTEND_REPO" worktree prune
+  run_quiet git -C "$BACKEND_REPO" worktree prune
 
   vlog "Workspace '$slug' removed successfully."
-  ok "workspace removed ($slug)"
+  spin_ok "workspace removed ($slug)"
+
+  # Its own step, after the removal is done: refresh the REMAINING workspaces'
+  # ignore-lists so they drop this workspace's repos.
+  sync_scm_ignores
 }

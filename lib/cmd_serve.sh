@@ -251,10 +251,14 @@ ensure_nginx() {
   # a bare "Password:" with no stated reason is hostile.
   log "Requesting sudo (needed to reload nginx)…"
   sudo -v || { err "sudo is required to reload nginx."; exit 1; }
-  run_nginx -t || { err "nginx config test failed — not reloading."; exit 1; }
-  run_nginx -s reload || { err "nginx reload failed."; exit 1; }
+
+  # Spinner starts only AFTER sudo has returned — it must never share the line
+  # with a password prompt. run_nginx keeps its own output quiet on success.
+  spin "reloading nginx"
+  run_nginx -t || { spin_stop; err "nginx config test failed — not reloading."; exit 1; }
+  run_nginx -s reload || { spin_stop; err "nginx reload failed."; exit 1; }
   vlog "nginx reloaded."
-  ok "reloaded successfully"
+  spin_ok "reloaded successfully"
 }
 
 # ------------------------------ dependencies --------------------------------
@@ -294,8 +298,11 @@ setup_dependencies() {
     warn "Main backend has no vendor/ ($BACKEND_REPO/vendor) — run 'composer install' there, then re-run 'ws serve'."
     DEPS_OK=false
   else
+    # Copying ~150 packages: slow enough to look hung without a spinner.
+    spin "cloning backend vendor"
     cp -Rc "$BACKEND_REPO/vendor" "$WT_BACKEND/vendor" 2>/dev/null \
       || cp -R "$BACKEND_REPO/vendor" "$WT_BACKEND/vendor"
+    spin_stop
     vlog "Cloned vendor into worktree."
   fi
 
@@ -477,15 +484,20 @@ cmd_serve() {
   vlog "Port base: $PORT_BASE   apps: ${requested_apps[*]}"
 
   # 1) envs (idempotent: existing worktree envs are kept unless --force)
+  # Silent work (cp + sed, detail behind -v), so it gets a spinner.
+  spin "copying envs"
   local app
   for app in "${requested_apps[@]}"; do
     if prepare_frontend_env "$app" "$host"; then
       served_apps+=("$app")
     fi
   done
-  [[ ${#served_apps[@]} -gt 0 ]] || { err "No servable frontend apps found."; exit 1; }
+  if [[ ${#served_apps[@]} -eq 0 ]]; then
+    spin_stop
+    err "No servable frontend apps found."; exit 1
+  fi
   prepare_backend_env "$host"
-  ok "envs copied successfully"
+  spin_ok "envs copied successfully"
 
   # 2) nginx (idempotent: only rewrites + reloads — and prompts sudo — if changed)
   #    ensure_nginx emits its own two checks; which ones depend on whether the

@@ -9,6 +9,14 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.0.0] — 2026-07-16
+
+The tool is now simply **workspaces** — new single-row wordmark with a
+gradient racing stripe, a redesigned `ws list`, and everything the 1.3–1.7
+series built up to (auto-serve terminals, badged favicons, `ws open`,
+`ws trust`, base-branch stacking). No breaking changes; the major bump marks
+the identity change.
+
 ### Added
 - `ws open 0` (or `ws open MAIN`) opens the main workspace: the new optional
   `MAIN_WORKSPACE_FILE` config names its .code-workspace; without it, both
@@ -165,7 +173,8 @@ when a release is tagged.
   own `<sub>.anny.dev` subdomain via Laravel Valet/nginx, Cognitor key
   seeding, `install.sh`, and Homebrew tap packaging.
 
-[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v1.7.0...v2.0.0
 [1.7.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v1.4.0...v1.5.0

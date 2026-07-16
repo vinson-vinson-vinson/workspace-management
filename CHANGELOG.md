@@ -9,6 +9,13 @@ when a release is tagged.
 
 ## [Unreleased]
 
+### Fixed
+- `ws serve`: `/storage/*` URLs (gallery images, logos — user uploads) 404ed
+  in served workspaces because the worktree has no `public/storage` link and
+  the workspace nginx block serves static files straight from `public/`.
+  serve now links `public/storage` to the main repo's `storage/app/public`,
+  matching the shared main DB whose records point at main's uploads.
+
 ## [1.3.2] — 2026-07-16
 
 ### Added

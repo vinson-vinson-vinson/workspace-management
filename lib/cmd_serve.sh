@@ -394,6 +394,27 @@ setup_dependencies() {
     vlog "Seeded Cognitor public key into worktree ($cog_key)."
   fi
 
+  # Serve /storage/* (user uploads: gallery images, logos, …). On the MAIN
+  # host Valet's Laravel driver maps /storage/<x> to storage/app/public/<x>
+  # internally, but the workspace nginx block serves static files straight
+  # from public/ — and a fresh worktree has no public/storage link (gitignored,
+  # `artisan storage:link` never ran), so every image 404s. Link it to the MAIN
+  # repo's storage/app/public: the worktree shares the main DB, so its file
+  # records point at main's uploads.
+  local wt_pub_storage="$WT_BACKEND/public/storage"
+  if [[ -L "$wt_pub_storage" && ! -e "$wt_pub_storage" ]]; then
+    warn "public/storage is a dangling symlink ($(readlink "$wt_pub_storage")) — relinking."
+    run_cmd rm -f "$wt_pub_storage"
+  fi
+  if [[ -e "$wt_pub_storage" ]]; then
+    vlog "public/storage already present (skipping)."
+  elif [[ ! -d "$BACKEND_REPO/storage/app/public" ]]; then
+    warn "Main backend has no storage/app/public — /storage URLs (images) will 404."
+  else
+    run_cmd ln -s "$BACKEND_REPO/storage/app/public" "$wt_pub_storage"
+    vlog "Linked public/storage -> main storage/app/public (shared uploads)."
+  fi
+
   # Laravel: ensure writable runtime dirs and drop any stale cached config.
   if ! "$DRY_RUN"; then
     mkdir -p "$WT_BACKEND/storage/framework/cache" \

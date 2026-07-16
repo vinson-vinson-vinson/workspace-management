@@ -333,6 +333,18 @@ sync_scm_ignores() {
   spin_ok "Source Control repo lists synced ($synced workspace(s))"
 }
 
+# Extract a workspace's accent color (titleBar.activeBackground) from its
+# .code-workspace file. Echoes a hex like "#571f74", or nothing. Used by `list`
+# (color swatch) and `serve` (tinted favicons).
+_ws_color() {
+  local file
+  file="$(workspace_file_for "$1")"
+  [[ -f "$file" ]] || file="$(legacy_workspace_file_for "$1")"
+  [[ -f "$file" ]] || return 0
+  grep -o '"titleBar\.activeBackground"[[:space:]]*:[[:space:]]*"#[0-9a-fA-F]\{6\}"' "$file" 2>/dev/null \
+    | grep -o '#[0-9a-fA-F]\{6\}' | head -n1
+}
+
 # Derive a DNS-safe subdomain label from a slug: the task id for a task slug
 # (CU-1234_x -> cu-1234), else the whole slug, lowercased with non-DNS chars
 # collapsed to '-'. Returns 1 if nothing usable remains.

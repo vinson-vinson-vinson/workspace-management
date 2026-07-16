@@ -9,6 +9,15 @@ when a release is tagged.
 
 ## [Unreleased]
 
+### Added
+- `ws serve`: browser-tab favicons in served workspaces are badged with the
+  workspace's accent color — the app's own icon shrunk to the middle with a
+  ring around it in the workspace color (same as the VS Code title bar and
+  the `ws list` swatch). Icons are generated per app into the session dir
+  (`.favicons/`, pure python3 — no image tooling) and nginx shadows the apps'
+  `/_favicons/` icon URLs with exact-match locations; the repos are never
+  touched.
+
 ### Fixed
 - `ws serve`: `/storage/*` URLs (gallery images, logos — user uploads) 404ed
   in served workspaces because the worktree has no `public/storage` link and

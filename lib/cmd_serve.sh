@@ -451,14 +451,16 @@ ensure_nginx() {
     return 0
   fi
 
+  # Get sudo BEFORE writing the block: a written-but-not-reloaded conf would
+  # pass the "unchanged" check on every later run and the reload would never
+  # happen. Stays visible even without -v: `sudo` is about to prompt for a
+  # password and a bare "Password:" with no stated reason is hostile.
+  log "Requesting sudo (needed to reload nginx)…"
+  sudo -v || { err "sudo is required to reload nginx. Routing left unchanged — re-run 'ws serve'."; exit 1; }
+
   printf '%s\n' "$expected" >"$conf"
   vlog "Wrote nginx block: $conf"
   ok "nginx setup successfully"
-
-  # Stays visible even without -v: `sudo` is about to prompt for a password and
-  # a bare "Password:" with no stated reason is hostile.
-  log "Requesting sudo (needed to reload nginx)…"
-  sudo -v || { err "sudo is required to reload nginx."; exit 1; }
 
   # Spinner starts only AFTER sudo has returned — it must never share the line
   # with a password prompt. run_nginx keeps its own output quiet on success.

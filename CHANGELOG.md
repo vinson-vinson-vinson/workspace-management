@@ -19,6 +19,9 @@ when a release is tagged.
   touched.
 
 ### Fixed
+- `ws serve`: sudo is requested *before* the nginx block is rewritten. A
+  denied/cancelled sudo used to leave the new block on disk unreloaded — and
+  every later run then judged the routing "unchanged" and never reloaded it.
 - `ws serve`: `/storage/*` URLs (gallery images, logos — user uploads) 404ed
   in served workspaces because the worktree has no `public/storage` link and
   the workspace nginx block serves static files straight from `public/`.

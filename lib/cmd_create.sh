@@ -8,11 +8,16 @@
 cmd_create_usage() {
   cat <<'USAGE'
 Usage:
-  ws create <NAME_OR_TASK_AND_NAME> [-n|--neanderthal] [--dry-run]
+  ws create <NAME_OR_TASK_AND_NAME> [BASE_BRANCH] [-n|--neanderthal] [--dry-run]
 
 Rules:
   - With task:    CU-<taskId>_<feature-name>  -> slug/branch CU-<taskId>_<feature-name>
   - Without task: <feature-name>              -> slug/branch <feature-name>
+  - BASE_BRANCH bases the new workspace branches on an existing branch instead
+    of the configured base (main) — e.g. to stack follow-up work on a feature
+    still in review. Applied per repo where the branch exists (locally or on
+    origin); a repo without it falls back to its configured base, with a
+    warning. Missing in both repos is an error.
   - The VS Code workspace opens automatically (disable with
     NO_OPEN_AFTER_CREATE=true in config.sh). On open, VS Code also starts one
     terminal running `ws serve`, and when it finishes, one terminal per default
@@ -26,6 +31,7 @@ Options:
 
 Examples:
   ws create CU-1234_Test-Project
+  ws create CU-5678_follow-up CU-1234_Test-Project
   ws create MyNewProject --neanderthal
   ws create CU-1234_Test-Project --dry-run
 USAGE
@@ -89,6 +95,11 @@ remote_branch_exists() {
     return 0
   fi
   git -C "$repo" ls-remote --heads --exit-code origin "$branch" >/dev/null 2>&1
+}
+
+# True if BRANCH exists in REPO at all — locally or on origin.
+branch_available() {
+  branch_exists_local "$1" "$2" || remote_branch_exists "$1" "$2"
 }
 
 # Records how the branch was obtained, so the milestone check can say what
@@ -278,7 +289,7 @@ cmd_create() {
   local positional=() combined=""
   DRY_RUN=false
   AUTO_SERVE=true
-  local TASK_INPUT="" FEATURE_NAME=""
+  local TASK_INPUT="" FEATURE_NAME="" BASE_OVERRIDE=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -293,10 +304,11 @@ cmd_create() {
     esac
   done
 
-  if [[ ${#positional[@]} -ne 1 ]]; then
+  if [[ ${#positional[@]} -lt 1 || ${#positional[@]} -gt 2 ]]; then
     cmd_create_usage; exit 1
   fi
   combined="${positional[0]}"
+  BASE_OVERRIDE="${positional[1]:-}"
 
   # One-argument task form: <PREFIX>-1234_MyProject (prefix case-insensitive).
   local combined_lc
@@ -331,6 +343,26 @@ cmd_create() {
   backend_worktree="$session_dir/$BACKEND_DIR_NAME"
   workspace_file="$(workspace_file_for "$branch_slug")"
 
+  # Optional BASE_BRANCH argument: base the workspace on an existing branch
+  # instead of the configured base — per repo, since a feature branch may only
+  # exist in one of them (the other keeps its configured base).
+  local fe_base="$FRONTEND_BASE_BRANCH" be_base="$BACKEND_BASE_BRANCH"
+  if [[ -n "$BASE_OVERRIDE" ]]; then
+    local fe_has=false be_has=false
+    branch_available "$FRONTEND_REPO" "$BASE_OVERRIDE" && fe_has=true
+    branch_available "$BACKEND_REPO" "$BASE_OVERRIDE" && be_has=true
+    if ! "$fe_has" && ! "$be_has"; then
+      err "Base branch '$BASE_OVERRIDE' not found in either repo (local or origin)."
+      exit 1
+    fi
+    if "$fe_has"; then fe_base="$BASE_OVERRIDE"; else
+      warn "'$BASE_OVERRIDE' not found in $FRONTEND_DIR_NAME — using '$fe_base' there."
+    fi
+    if "$be_has"; then be_base="$BASE_OVERRIDE"; else
+      warn "'$BASE_OVERRIDE' not found in $BACKEND_DIR_NAME — using '$be_base' there."
+    fi
+  fi
+
   # USE_REMOTE_MAIN promises the LIVE remote: refresh the remote-tracking refs
   # first, or origin/<base-branch> would just mean "as of the last fetch". A
   # failed fetch (e.g. offline) degrades to that last-fetched state with a
@@ -338,8 +370,8 @@ cmd_create() {
   if "$USE_REMOTE_MAIN"; then
     local fetch_ok=true
     spin "fetching origin base branches"
-    run_quiet git -C "$FRONTEND_REPO" fetch origin "$FRONTEND_BASE_BRANCH" || fetch_ok=false
-    run_quiet git -C "$BACKEND_REPO" fetch origin "$BACKEND_BASE_BRANCH" || fetch_ok=false
+    run_quiet git -C "$FRONTEND_REPO" fetch origin "$fe_base" || fetch_ok=false
+    run_quiet git -C "$BACKEND_REPO" fetch origin "$be_base" || fetch_ok=false
     if "$fetch_ok"; then
       spin_ok "origin base branches fetched"
     else
@@ -348,8 +380,8 @@ cmd_create() {
     fi
   fi
 
-  frontend_ref="$(resolve_base_ref "$FRONTEND_REPO" "$FRONTEND_BASE_BRANCH")"
-  backend_ref="$(resolve_base_ref "$BACKEND_REPO" "$BACKEND_BASE_BRANCH")"
+  frontend_ref="$(resolve_base_ref "$FRONTEND_REPO" "$fe_base")"
+  backend_ref="$(resolve_base_ref "$BACKEND_REPO" "$be_base")"
 
   vlog "Session slug: $branch_slug"
   vlog "Frontend worktree: $frontend_worktree"
@@ -398,15 +430,22 @@ cmd_create() {
   run_cmd mkdir -p "$session_dir"
 
   # Can be slow: may fetch from origin before adding each worktree.
+  local fe_branch_origin be_branch_origin
   spin "creating worktrees"
   add_worktree "$FRONTEND_REPO" "$branch_slug" "$frontend_worktree" "$frontend_ref"
   created_frontend=true
+  fe_branch_origin="$BRANCH_ORIGIN"
   add_worktree "$BACKEND_REPO" "$branch_slug" "$backend_worktree" "$backend_ref"
   created_backend=true
+  be_branch_origin="$BRANCH_ORIGIN"
   spin_stop
-  # Both repos take the same slug, so BRANCH_ORIGIN from the last add_worktree
-  # describes both.
-  ok "branches ${BRANCH_ORIGIN} ($branch_slug)"
+  # Usually both repos take the same base and the two origins agree; with a
+  # BASE_BRANCH that exists in only one repo they can differ — say so.
+  if [[ "$fe_branch_origin" == "$be_branch_origin" ]]; then
+    ok "branches ${BRANCH_ORIGIN} ($branch_slug)"
+  else
+    ok "branches: $FRONTEND_DIR_NAME ${fe_branch_origin}, $BACKEND_DIR_NAME ${be_branch_origin} ($branch_slug)"
+  fi
   ok "worktrees added ($FRONTEND_DIR_NAME, $BACKEND_DIR_NAME)"
 
   workspace_color="$(random_workspace_color)"

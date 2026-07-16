@@ -9,6 +9,14 @@ when a release is tagged.
 
 ## [Unreleased]
 
+### Added
+- `ws create <name> [BASE_BRANCH]`: base the new workspace branches on an
+  existing branch instead of the configured base — e.g. to stack follow-up
+  work on a feature still in review. Applied per repo where the branch exists
+  (locally or on origin); a repo without it falls back to its configured base
+  with a warning, and the "branches created from" milestone spells out both
+  bases when they differ. Missing in both repos is an error.
+
 ### Removed
 - Homebrew packaging (`packaging/`, `PACKAGING.md`, README install section):
   the tap was unused — everyone installs via git clone + `install.sh`. The

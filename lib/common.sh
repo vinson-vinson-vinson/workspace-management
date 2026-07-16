@@ -9,6 +9,10 @@
 
 WSM_VERSION="1.6.0"
 
+# Sudoers drop-in installed by `ws trust` (NOPASSWD for the exact nginx
+# commands `ws serve` runs). Shared: trust writes it, serve checks for it.
+WSM_SUDOERS_FILE="/etc/sudoers.d/workspace-management"
+
 # ------------------------------- colors -------------------------------------
 # Only emit ANSI when stdout is a terminal; piped/redirected output stays clean.
 if [[ -t 1 ]]; then
@@ -203,6 +207,7 @@ load_config() {
   # under `set -u`.
   NO_OPEN_AFTER_CREATE="${NO_OPEN_AFTER_CREATE:-false}"
   USE_REMOTE_MAIN="${USE_REMOTE_MAIN:-false}"
+  REQUIRE_CONFIRM_REMOVE="${REQUIRE_CONFIRM_REMOVE:-true}"
   # Array default, bash-3.2/set -u safe: keeps an unset EXTRA_WORKSPACE_FOLDERS
   # from blowing up expansion in configs predating the setting.
   EXTRA_WORKSPACE_FOLDERS=(${EXTRA_WORKSPACE_FOLDERS[@]+"${EXTRA_WORKSPACE_FOLDERS[@]}"})
@@ -367,6 +372,25 @@ resolve_subdomain() {
   sub="$(printf '%s' "$sub" | sed -E 's/[^a-z0-9-]+/-/g; s/-+/-/g; s/^-+//; s/-+$//')"
   [[ -n "$sub" ]] || return 1
   printf '%s' "$sub"
+}
+
+# Make sure upcoming `sudo nginx` calls won't die on authentication: quiet
+# when the `ws trust` rule is installed or credentials are still cached,
+# otherwise a visible `sudo -v` prompt. NOTE: with the (command-scoped) trust
+# rule, `sudo -v` would STILL prompt — it validates general credentials, not
+# command rules — so it must be skipped, not attempted. Returns non-zero if
+# the user can't/won't authenticate; callers add their own context.
+ensure_sudo_for_nginx() {
+  if [[ -f "$WSM_SUDOERS_FILE" ]]; then
+    vlog "ws trust rule present — no sudo prompt needed."
+    return 0
+  fi
+  if sudo -n true 2>/dev/null; then
+    return 0
+  fi
+  log "Requesting sudo (needed to reload nginx)…"
+  log "(Run 'ws trust' once to stop these prompts for good.)"
+  sudo -v
 }
 
 # Run an nginx command, hiding valet-wide deprecation warnings on success.

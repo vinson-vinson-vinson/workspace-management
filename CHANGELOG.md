@@ -9,6 +9,19 @@ when a release is tagged.
 
 ## [Unreleased]
 
+### Added
+- `REQUIRE_CONFIRM_REMOVE` config (default `true`): set to `false` to skip
+  `ws remove`'s "Continue? [y/N]" prompt. Only the prompt — the
+  protected-branch guard and the uncommitted/unpushed-work check still apply.
+- `ws trust`: one-time sudoers drop-in (like `valet trust`) that allows
+  exactly `nginx -t` and `nginx -s reload` without a password — the password
+  is entered once to install the rule and never stored. Every nginx-touching
+  command (`ws serve`, `ws remove`, and thus `ws create`'s auto-serve
+  terminal) skips its sudo prompt when the rule is present, via one shared
+  check (a `sudo -v` would still prompt despite the command-scoped rule, so
+  it's bypassed, not attempted). `ws trust --revoke` removes the rule; the
+  generated file is visudo-validated before it touches /etc/sudoers.d.
+
 ## [1.6.0] — 2026-07-16
 
 ### Added

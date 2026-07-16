@@ -27,6 +27,8 @@ Safety:
     protected base branch (main/master or your configured base branch).
   - Checks for uncommitted changes and unpushed commits before removal.
   - Aborts if any worktree has local-only work (unless --force is given).
+  - The "Continue? [y/N]" prompt can be disabled for good with
+    REQUIRE_CONFIRM_REMOVE=false in config.sh (the checks above still apply).
 
 Examples:
   ws remove                                     # auto-detect from cwd
@@ -59,10 +61,9 @@ revert_serve_setup() {
     return 0
   fi
 
-  # Visible, like serve's: sudo is about to prompt and should say why. NOTE: no
-  # spinner around sudo — it would fight the password prompt for the line.
-  log "Requesting sudo (needed to reload nginx)…"
-  sudo -v || { err "sudo is required to reload nginx."; exit 1; }
+  # Quiet with the `ws trust` rule installed; otherwise a visible prompt. NOTE:
+  # no spinner around sudo — it would fight the password prompt for the line.
+  ensure_sudo_for_nginx || { err "sudo is required to reload nginx."; exit 1; }
 
   spin "reverting routing"
   rm -f "$conf"
@@ -134,6 +135,12 @@ check_worktree_clean() {
 confirm_removal() {
   local slug="$1"
   if "$FORCE" || "$DRY_RUN"; then return 0; fi
+  # Config opt-out (REQUIRE_CONFIRM_REMOVE=false). Only the prompt — the
+  # protected-branch guard and the unpushed-work check still apply.
+  if ! "$REQUIRE_CONFIRM_REMOVE"; then
+    vlog "Confirmation prompt disabled (REQUIRE_CONFIRM_REMOVE=false)."
+    return 0
+  fi
   # Never behind -v: a destructive prompt must state what it destroys.
   log "About to remove workspace: $slug"
   log "This will:"

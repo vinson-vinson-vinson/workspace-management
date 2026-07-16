@@ -56,3 +56,6 @@ case ":$PATH:" in
 esac
 
 printf '\nDone. Try: ws help\n'
+printf 'Optional: `ws trust` makes `ws serve` reload nginx without sudo prompts\n'
+printf '(one-time sudoers rule for exactly two nginx commands; asks for your\n'
+printf 'password once to install, stores nothing).\n'

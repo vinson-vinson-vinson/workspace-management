@@ -50,6 +50,12 @@ NO_OPEN_AFTER_CREATE=false
 # disk. Optional; defaults to false.
 USE_REMOTE_MAIN=false
 
+# Set to false to skip `ws remove`'s "Continue? [y/N]" confirmation prompt.
+# The other safety nets are unaffected: removal still refuses worktrees on a
+# protected base branch, and still aborts on uncommitted/unpushed work unless
+# --force is given. Optional; defaults to true.
+REQUIRE_CONFIRM_REMOVE=true
+
 # Extra folders added to every workspace's VS Code window — e.g. shared local
 # packages you regularly edit alongside task work. Absolute paths, appended
 # after the two worktree folders. Paths that don't exist on this machine are

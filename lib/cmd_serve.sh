@@ -38,6 +38,7 @@ Notes:
     or your configured base branch), so it never overwrites your main setup.
   - Safe to re-run: it keeps existing envs, and only touches nginx (and prompts
     for sudo) when the routing block actually changes. Use --force to refresh.
+    Run `ws trust` once to make the nginx reload passwordless.
   - Does NOT start the dev servers; it prints the `yarn serve-*` commands to run.
 USAGE
 }
@@ -453,10 +454,9 @@ ensure_nginx() {
 
   # Get sudo BEFORE writing the block: a written-but-not-reloaded conf would
   # pass the "unchanged" check on every later run and the reload would never
-  # happen. Stays visible even without -v: `sudo` is about to prompt for a
-  # password and a bare "Password:" with no stated reason is hostile.
-  log "Requesting sudo (needed to reload nginx)…"
-  sudo -v || { err "sudo is required to reload nginx. Routing left unchanged — re-run 'ws serve'."; exit 1; }
+  # happen. ensure_sudo_for_nginx is quiet with the `ws trust` rule installed.
+  ensure_sudo_for_nginx \
+    || { err "sudo is required to reload nginx. Routing left unchanged — re-run 'ws serve'."; exit 1; }
 
   printf '%s\n' "$expected" >"$conf"
   vlog "Wrote nginx block: $conf"

@@ -115,6 +115,7 @@ Everything is one command, `workspaces` (alias `ws`), with subcommands:
 | `ws open <N\|slug>` | Open a workspace's VS Code window by its `ws list` index (or slug). Just the editor — no serving, no side effects. |
 | `ws serve [slug]` | Make a workspace reachable at `<sub>.<domain>` via Valet/nginx: rewrite envs, write the nginx block, install deps. Slug defaults to the current directory. Does **not** start dev servers — it prints the `yarn serve-*` commands. |
 | `ws remove [slug]` | Tear a workspace down safely: revert routing, remove worktrees, delete branches, clean the session dir. Refuses on unpushed work unless `--force`. Slug defaults to cwd. |
+| `ws trust` | One-time sudoers rule (like `valet trust`) so `ws serve` can test/reload nginx without password prompts. Covers exactly `nginx -t` and `nginx -s reload`; never stores the password. `--revoke` removes it. |
 | `ws sync` | Recompute each workspace's VS Code Source Control ignore-list so every window shows only its own two worktrees. Runs automatically on `create`/`remove`. |
 | `ws help` / `ws version` | Banner + command overview / print the version. |
 

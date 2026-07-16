@@ -199,6 +199,9 @@ load_config() {
   # shellcheck source=/dev/null
   source "$cfg"
   TASK_ID_PREFIX_LC="$(printf '%s' "$TASK_ID_PREFIX" | tr '[:upper:]' '[:lower:]')"
+  # Optional settings — defaulted here so configs predating them keep working
+  # under `set -u`.
+  NO_OPEN_AFTER_CREATE="${NO_OPEN_AFTER_CREATE:-false}"
 }
 
 # ------------------------- git / workspace helpers --------------------------

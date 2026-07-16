@@ -13,7 +13,8 @@ Usage:
 Rules:
   - With task:    CU-<taskId>_<feature-name>  -> slug/branch CU-<taskId>_<feature-name>
   - Without task: <feature-name>              -> slug/branch <feature-name>
-  - The VS Code workspace opens automatically. On open, VS Code also starts one
+  - The VS Code workspace opens automatically (disable with
+    NO_OPEN_AFTER_CREATE=true in config.sh). On open, VS Code also starts one
     terminal running `ws serve`, and when it finishes, one terminal per default
     app running `yarn serve-<app>`.
 
@@ -108,9 +109,16 @@ add_worktree() {
   run_quiet git -C "$repo" worktree add -b "$branch" "$worktree_path" "$base_ref"
 }
 
+# Open the workspace in VS Code and print the milestone check — or, with
+# NO_OPEN_AFTER_CREATE=true in the config, do neither and say so instead.
 open_workspace() {
   local workspace_file="$1"
+  if "$NO_OPEN_AFTER_CREATE"; then
+    ok "VS Code not opened (config: NO_OPEN_AFTER_CREATE)"
+    return 0
+  fi
   run_cmd code -n "$workspace_file"
+  ok "VS Code opened"
 }
 
 # Pick a legible title-bar foreground ("dark"/"light") for a "#rrggbb" bg using
@@ -282,7 +290,8 @@ cmd_create() {
 
   require_command git
   require_command sed
-  require_command code
+  # `code` is only needed to open VS Code at the end.
+  "$NO_OPEN_AFTER_CREATE" || require_command code
   require_repo "$FRONTEND_REPO"
   require_repo "$BACKEND_REPO"
 
@@ -325,7 +334,6 @@ cmd_create() {
       fi
       sync_scm_ignores
       open_workspace "$workspace_file"
-      ok "VS Code opened"
       exit 0
     fi
     err "Both worktree paths exist, but at least one is not registered as git worktree. Refusing."
@@ -372,7 +380,6 @@ cmd_create() {
   sync_scm_ignores
   # Checked last, once it has actually happened — not announced in advance.
   open_workspace "$workspace_file"
-  ok "VS Code opened"
 
   trap - EXIT
 }

@@ -38,6 +38,11 @@ BACKEND_BASE_BRANCH="main"
 # "don't touch a main/base checkout" branch check. Case-insensitive.
 TASK_ID_PREFIX="CU"
 
+# Set to true to NOT open VS Code after `ws create`. The worktrees and the
+# .code-workspace file are still created — you open the workspace yourself
+# (e.g. via the clickable name in `ws list`). Optional; defaults to false.
+NO_OPEN_AFTER_CREATE=false
+
 # ------------------------------ serving (ws serve) ---------------------------
 # `ws serve` makes a task worktree reachable at <sub>.$BASE_DOMAIN using Laravel
 # Valet's nginx + wildcard cert. If you don't use `ws serve` you can leave this

@@ -30,6 +30,19 @@ _ws_link() {
   fi
 }
 
+# Wrap TEXT in an OSC 8 hyperlink to the slug's .code-workspace file, so
+# clicking the workspace name opens it in VS Code (a file:// URL goes through
+# LaunchServices — same as double-clicking the file in Finder). Plain text when
+# stdout isn't a terminal or the workspace file doesn't exist.
+_ws_name_link() {
+  local slug="$1" text="$2" file
+  "$TTY" || { printf '%s' "$text"; return; }
+  file="$(workspace_file_for "$slug")"
+  [[ -f "$file" ]] || file="$(legacy_workspace_file_for "$slug")"
+  [[ -f "$file" ]] || { printf '%s' "$text"; return; }
+  printf '\033]8;;file://%s\033\\%s\033]8;;\033\\' "$file" "$text"
+}
+
 # Extract a workspace's accent color (titleBar.activeBackground) from its
 # .code-workspace file. Echoes a hex like "#571f74", or nothing.
 _ws_color() {
@@ -186,6 +199,12 @@ cmd_list() {
       dw=${#name}
     fi
     pad=$(( maxname - dw ))
+
+    # Linkify AFTER truncation/padding math — the OSC 8 escapes are zero-width
+    # but would inflate ${#name}. MAIN has no .code-workspace, so it stays plain.
+    if [[ "${r_key[$i]}" != "MAIN" ]]; then
+      name="$(_ws_name_link "${r_key[$i]}" "$name")"
+    fi
 
     if [[ -n "${r_link[$i]}" ]]; then
       link="$(_ws_link "${r_link[$i]}")"

@@ -8,20 +8,24 @@
 cmd_create_usage() {
   cat <<'USAGE'
 Usage:
-  ws create <NAME_OR_TASK_AND_NAME> [--dry-run]
+  ws create <NAME_OR_TASK_AND_NAME> [-n|--neanderthal] [--dry-run]
 
 Rules:
   - With task:    CU-<taskId>_<feature-name>  -> slug/branch CU-<taskId>_<feature-name>
   - Without task: <feature-name>              -> slug/branch <feature-name>
-  - The VS Code workspace opens automatically.
+  - The VS Code workspace opens automatically. On open, VS Code also starts one
+    terminal running `ws serve`, and when it finishes, one terminal per default
+    app running `yarn serve-<app>`.
 
 Options:
+  -n, --neanderthal    Bare workspace: skip the auto-started serve/dev-server
+                       terminals (you run everything by hand, like it's 2024).
   --dry-run            Print actions without executing them.
   -h, --help           Show this help.
 
 Examples:
   ws create CU-1234_Test-Project
-  ws create MyNewProject
+  ws create MyNewProject --neanderthal
   ws create CU-1234_Test-Project --dry-run
 USAGE
 }
@@ -118,13 +122,70 @@ contrast_foreground() {
   if ((lum > 150)); then printf 'dark'; else printf 'light'; fi
 }
 
+# Emit the workspace "tasks" block that auto-starts the dev terminals when the
+# workspace opens: one terminal running `ws serve`, then — once serve has
+# finished — one terminal per default app running `yarn serve-<app>`. The dev
+# servers MUST wait for serve: on a fresh worktree it copies .env.yarn (the
+# private-registry tokens .yarnrc.yml needs, e.g. ANNY_NPM_TOKEN) and installs
+# node_modules; started in parallel, yarn dies immediately on the missing env.
+# Each yarn task therefore dependsOn "ws serve" directly — VS Code dedupes the
+# shared dependency, so serve runs once and both terminals start when it's done.
+# (Deliberately NOT a command-less "dev servers" compound between them: nested
+# compounds are exactly what VS Code sequenced unreliably.) "folderOpen" makes
+# VS Code run it automatically (first open may ask once to allow automatic
+# tasks / trust the folder).
+# NOTE: built with printf, not a captured heredoc — macOS bash 3.2 mishandles
+# heredocs inside $(...) (same caveat as the nginx block in cmd_serve.sh).
+emit_workspace_tasks() {
+  local frontend_dir="$1" backend_dir="$2"
+  local app labels=""
+  printf '%s\n' \
+'  "tasks": {' \
+'    "version": "2.0.0",' \
+'    "tasks": [' \
+'      {' \
+'        "label": "ws serve",' \
+'        "type": "shell",' \
+'        "command": "ws serve",' \
+"        \"options\": { \"cwd\": \"\${workspaceFolder:${backend_dir}}\" }," \
+'        "presentation": { "panel": "dedicated", "reveal": "always", "group": "dev-servers" },' \
+'        "problemMatcher": []' \
+'      },'
+  for app in ${DEFAULT_APPS[@]+"${DEFAULT_APPS[@]}"}; do
+    printf '%s\n' \
+'      {' \
+"        \"label\": \"yarn serve-${app}\"," \
+'        "type": "shell",' \
+"        \"command\": \"yarn serve-${app}\"," \
+"        \"options\": { \"cwd\": \"\${workspaceFolder:${frontend_dir}}\" }," \
+'        "isBackground": true,' \
+'        "dependsOn": ["ws serve"],' \
+'        "presentation": { "panel": "dedicated", "reveal": "always", "group": "dev-servers" },' \
+'        "problemMatcher": []' \
+'      },'
+    [[ -n "$labels" ]] && labels+=", "
+    labels+="\"yarn serve-${app}\""
+  done
+  printf '%s\n' \
+'      {' \
+'        "label": "workspace up",' \
+"        \"dependsOn\": [${labels}]," \
+'        "runOptions": { "runOn": "folderOpen" },' \
+'        "problemMatcher": []' \
+'      }' \
+'    ]' \
+'  },'
+}
+
 write_workspace_file() {
   # frontend_dir/backend_dir are relative to the workspace file, which now lives
   # inside the session dir next to the two worktrees — so the paths are just the
   # worktree directory names and the whole session dir is self-contained.
   local workspace_file="$1" frontend_dir="$2" backend_dir="$3" accent_color="$4"
+  local tasks_note=""
+  "$AUTO_SERVE" && tasks_note=" (with auto-serve terminal tasks)"
   if "$DRY_RUN"; then
-    printf '[dry-run] write workspace file %s\n' "$workspace_file"; return
+    printf '[dry-run] write workspace file %s%s\n' "$workspace_file" "$tasks_note"; return
   fi
   local active_fg inactive_fg
   if [[ "$(contrast_foreground "$accent_color")" == "dark" ]]; then
@@ -132,13 +193,20 @@ write_workspace_file() {
   else
     active_fg="#ffffff"; inactive_fg="#ffffffcc"
   fi
+  # --neanderthal writes the same file minus the tasks block (and minus the
+  # setting that lets the block run unprompted — pointless without it).
+  local tasks_block="" allow_tasks=""
+  if "$AUTO_SERVE"; then
+    tasks_block="$(emit_workspace_tasks "$frontend_dir" "$backend_dir")"$'\n'
+    allow_tasks=$'\n    "task.allowAutomaticTasks": "on",'
+  fi
   cat >"$workspace_file" <<EOF
 {
   "folders": [
     { "path": "$frontend_dir" },
     { "path": "$backend_dir" }
   ],
-  "settings": {
+${tasks_block}  "settings": {${allow_tasks}
     "git.autoRepositoryDetection": false,
     "git.openRepositoryInParentFolders": "never",
     "window.titleBarStyle": "custom",
@@ -180,10 +248,12 @@ random_workspace_color() {
 cmd_create() {
   local positional=() combined=""
   DRY_RUN=false
+  AUTO_SERVE=true
   local TASK_INPUT="" FEATURE_NAME=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      -n|--neanderthal) AUTO_SERVE=false; shift ;;
       --dry-run)   DRY_RUN=true; shift ;;
       -h|--help)   cmd_create_usage; exit 0 ;;
       --)

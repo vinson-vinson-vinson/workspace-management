@@ -6,3 +6,5 @@ config.sh
 
 # Claude Code local settings
 .claude/
+
+planning/*

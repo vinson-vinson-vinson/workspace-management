@@ -294,6 +294,7 @@ setup_dependencies() {
     vlog "vendor already present in worktree (skipping)."
   elif "$DRY_RUN"; then
     printf '[dry-run] cp -Rc %s %s (clone vendor)\n' "$BACKEND_REPO/vendor" "$WT_BACKEND/vendor"
+    ok "backend vendor cloned"
   elif [[ ! -d "$BACKEND_REPO/vendor" ]]; then
     warn "Main backend has no vendor/ ($BACKEND_REPO/vendor) — run 'composer install' there, then re-run 'ws serve'."
     DEPS_OK=false
@@ -302,7 +303,7 @@ setup_dependencies() {
     spin "cloning backend vendor"
     cp -Rc "$BACKEND_REPO/vendor" "$WT_BACKEND/vendor" 2>/dev/null \
       || cp -R "$BACKEND_REPO/vendor" "$WT_BACKEND/vendor"
-    spin_stop
+    spin_ok "backend vendor cloned"
     vlog "Cloned vendor into worktree."
   fi
 
@@ -319,7 +320,13 @@ setup_dependencies() {
     vlog "Frontend node_modules already present (skipping yarn — run 'yarn' in the worktree to refresh)."
   else
     vlog "Installing frontend dependencies with yarn (this can take a while)…"
-    if ! run_cmd bash -c "cd '$WT_FRONTEND' && yarn"; then
+    # Slow and chatty: hide yarn's output behind a spinner (run_quiet shows it
+    # under -v, and on failure — where it's the error message).
+    spin "yarn installing"
+    if run_quiet bash -c "cd '$WT_FRONTEND' && yarn"; then
+      spin_ok "yarn installed"
+    else
+      spin_stop
       warn "yarn install failed in $WT_FRONTEND."
       DEPS_OK=false
       warn "The backend is set up; finish the frontend with: cd '$WT_FRONTEND' && yarn"

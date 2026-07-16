@@ -116,7 +116,9 @@ protected base branch, so your main checkout is never touched.
 
 Typical flow — `create` → `serve` → `list` → `remove`:
 
-1. **create** — cut matching branches in both repos into one session dir; VS Code opens.
+1. **create** — cut matching branches in both repos into one session dir; VS Code
+   opens and auto-starts one terminal each for `ws serve` and the default apps'
+   `yarn serve-<app>` dev servers (opt out with `--neanderthal`).
 2. **serve** (optional) — the workspace answers on its own subdomain. Only the
    self-domain and dev-server ports are rewritten, so the DB, keys, and shared
    infra keep pointing at your main setup. Then start the dev servers it prints.
@@ -127,7 +129,7 @@ Everything is one command, `workspaces` (alias `ws`), with subcommands:
 
 | Command | What it does |
 | --- | --- |
-| `ws create <slug>` | Create (or reopen) a workspace: add both worktrees, write a `.code-workspace`, open VS Code. |
+| `ws create <slug>` | Create (or reopen) a workspace: add both worktrees, write a `.code-workspace`, open VS Code. On open, VS Code auto-runs `ws serve` and then `yarn serve-<app>` per default app, each in its own terminal; `--neanderthal` skips those tasks. |
 | `ws list` (or bare `ws`) | List all workspaces, star the one you're in, link each served one to its landing URL. |
 | `ws serve [slug]` | Make a workspace reachable at `<sub>.<domain>` via Valet/nginx: rewrite envs, write the nginx block, install deps. Slug defaults to the current directory. Does **not** start dev servers — it prints the `yarn serve-*` commands. |
 | `ws remove [slug]` | Tear a workspace down safely: revert routing, remove worktrees, delete branches, clean the session dir. Refuses on unpushed work unless `--force`. Slug defaults to cwd. |

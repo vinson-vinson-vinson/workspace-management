@@ -9,6 +9,17 @@ when a release is tagged.
 
 ## [Unreleased]
 
+### Added
+- Configurable IDEs: new `FRONTEND_IDE` / `BACKEND_IDE` config settings
+  (default `vscode`; also `phpstorm`, `webstorm`, `zed`). `ws open` and
+  `ws create` open the workspace in the configured IDE(s): the same IDE on
+  both sides opens ONE combined window (vscode: the `.code-workspace`; zed:
+  one multi-folder window; phpstorm/webstorm — no multi-root projects — the
+  session dir as a single project), while different IDEs open each worktree
+  separately in its own IDE. Each IDE needs its CLI launcher on `PATH`
+  (`code` / `phpstorm` / `webstorm` / `zed`); a missing one fails with an
+  install hint.
+
 ## [2.0.0] — 2026-07-16
 
 The tool is now simply **workspaces** — new single-row wordmark with a

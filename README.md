@@ -82,6 +82,7 @@ The essentials:
 | `FRONTEND_REPO` / `BACKEND_REPO` | Full paths to the main clones. |
 | `WORKSPACES_ROOT` | Where session worktrees are created. |
 | `FRONTEND_BASE_BRANCH` / `BACKEND_BASE_BRANCH` | Branch new worktrees are cut from. |
+| `FRONTEND_IDE` / `BACKEND_IDE` | IDE each repo opens in: `vscode` (default), `phpstorm`, `webstorm`, or `zed`. Same value → one combined window; different values → separate windows per worktree. |
 | `TASK_ID_PREFIX` | Prefix that marks a "task" workspace (default `CU`, for ClickUp). |
 | `BASE_DOMAIN`, `ADMIN_PATH`, `PORT_RANGE_START`, `VALET_*` | `ws serve` routing. |
 | `APPS`, `DEFAULT_APPS` | Frontend app registry (`key:dir:route:port-offset`). |
@@ -112,7 +113,7 @@ Everything is one command, `workspaces` (alias `ws`), with subcommands:
 | --- | --- |
 | `ws create <slug>` | Create (or reopen) a workspace: add both worktrees, write a `.code-workspace`, open VS Code. On open, VS Code auto-runs `ws serve` and then `yarn serve-<app>` per default app, each in its own terminal; `--neanderthal` skips those tasks. |
 | `ws list` (or bare `ws`) | List all workspaces, star the one you're in, link each served one to its landing URL. The `#` column numbers the rows for `ws open`. |
-| `ws open <N\|slug>` | Open a workspace's VS Code window by its `ws list` index (or slug). Index 0 (or `MAIN`) opens the main workspace (`MAIN_WORKSPACE_FILE`, or both main repos). Just the editor — no serving, no side effects. |
+| `ws open <N\|slug>` | Open a workspace by its `ws list` index (or slug) in the IDE(s) named by `FRONTEND_IDE`/`BACKEND_IDE` — VS Code by default, or PhpStorm/WebStorm/Zed. Same IDE on both sides → one combined window; different IDEs → each worktree opens separately. Index 0 (or `MAIN`) opens the main workspace (`MAIN_WORKSPACE_FILE`, or both main repos). Just the editor — no serving, no side effects. |
 | `ws serve [slug]` | Make a workspace reachable at `<sub>.<domain>` via Valet/nginx: rewrite envs, write the nginx block, install deps. Slug defaults to the current directory. Does **not** start dev servers — it prints the `yarn serve-*` commands. |
 | `ws remove [slug]` | Tear a workspace down safely: revert routing, remove worktrees, delete branches, clean the session dir. Refuses on unpushed work unless `--force`. Slug defaults to cwd. |
 | `ws trust` | One-time sudoers rule (like `valet trust`) so `ws serve` can test/reload nginx without password prompts. Covers exactly `nginx -t` and `nginx -s reload`; never stores the password. `--revoke` removes it. |

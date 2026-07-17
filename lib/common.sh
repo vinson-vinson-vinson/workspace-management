@@ -250,9 +250,134 @@ load_config() {
   USE_REMOTE_MAIN="${USE_REMOTE_MAIN:-false}"
   REQUIRE_CONFIRM_REMOVE="${REQUIRE_CONFIRM_REMOVE:-true}"
   MAIN_WORKSPACE_FILE="${MAIN_WORKSPACE_FILE:-}"
+  # IDE per repo role (see config.example.sh); defaulted and validated here so
+  # configs predating the settings keep working and typos fail loudly.
+  FRONTEND_IDE="$(printf '%s' "${FRONTEND_IDE:-vscode}" | tr '[:upper:]' '[:lower:]')"
+  BACKEND_IDE="$(printf '%s' "${BACKEND_IDE:-vscode}" | tr '[:upper:]' '[:lower:]')"
+  _validate_ide FRONTEND_IDE "$FRONTEND_IDE"
+  _validate_ide BACKEND_IDE "$BACKEND_IDE"
   # Array default, bash-3.2/set -u safe: keeps an unset EXTRA_WORKSPACE_FOLDERS
   # from blowing up expansion in configs predating the setting.
   EXTRA_WORKSPACE_FOLDERS=(${EXTRA_WORKSPACE_FOLDERS[@]+"${EXTRA_WORKSPACE_FOLDERS[@]}"})
+}
+
+# ------------------------------- IDE launchers -------------------------------
+# Workspaces open in the IDE(s) named by FRONTEND_IDE / BACKEND_IDE in the
+# config (vscode | phpstorm | webstorm | zed; default vscode). The same value
+# on both sides opens the workspace combined in ONE window; different values
+# open each worktree separately in its own IDE. The launcher/label/open
+# mechanics live here so cmd_open and cmd_create share one implementation.
+
+# The CLI launcher an IDE is driven through.
+ide_command() {
+  case "$1" in
+    vscode) printf 'code' ;;
+    *)      printf '%s' "$1" ;;
+  esac
+}
+
+# Human-readable IDE name for milestone messages.
+ide_label() {
+  case "$1" in
+    vscode)   printf 'VS Code' ;;
+    phpstorm) printf 'PhpStorm' ;;
+    webstorm) printf 'WebStorm' ;;
+    zed)      printf 'Zed' ;;
+    *)        printf '%s' "$1" ;;
+  esac
+}
+
+# Reject anything that isn't a supported IDE. $1 is the config variable's NAME
+# (for the error message), $2 its value.
+_validate_ide() {
+  case "$2" in
+    vscode|phpstorm|webstorm|zed) return 0 ;;
+    *)
+      err "Invalid $1 in config: '$2' (allowed: vscode, phpstorm, webstorm, zed)"
+      exit 1 ;;
+  esac
+}
+
+# Make sure the launcher for IDE $1 is on PATH, with an install hint per IDE.
+require_ide() {
+  local ide="$1" cmd
+  cmd="$(ide_command "$ide")"
+  command -v "$cmd" >/dev/null 2>&1 && return 0
+  err "Required command not found: $cmd ($(ide_label "$ide"))"
+  case "$ide" in
+    vscode)
+      printf "Install it from VS Code: Cmd+Shift+P -> \"Shell Command: Install 'code' command in PATH\".\n" >&2 ;;
+    phpstorm|webstorm)
+      printf 'Enable the launcher in JetBrains Toolbox (Settings -> Generate shell scripts)\n' >&2
+      printf 'or in the IDE: Tools -> Create Command-line Launcher.\n' >&2 ;;
+    zed)
+      printf 'Install it from Zed: Zed menu -> Install CLI.\n' >&2 ;;
+  esac
+  exit 1
+}
+
+# Every launcher the current IDE config needs (one combined, two when split).
+require_configured_ides() {
+  require_ide "$FRONTEND_IDE"
+  [[ "$FRONTEND_IDE" == "$BACKEND_IDE" ]] || require_ide "$BACKEND_IDE"
+}
+
+# Open ONE directory in IDE $1, in a new window where the CLI supports it.
+open_dir_in_ide() {
+  local ide="$1" dir="$2"
+  case "$ide" in
+    vscode) run_cmd code -n "$dir" ;;
+    zed)    run_cmd zed -n "$dir" ;;
+    *)      run_cmd "$(ide_command "$ide")" "$dir" ;;
+  esac
+}
+
+# Open a workspace in the configured IDE(s):
+#
+#   open_workspace_editors FRONTEND_PATH BACKEND_PATH WORKSPACE_FILE COMBINED_DIR LABEL
+#
+# Identical FRONTEND_IDE/BACKEND_IDE -> ONE combined window: vscode opens
+# WORKSPACE_FILE (falling back to both folders in one window when it's empty or
+# missing), zed opens both folders as one multi-folder workspace, and
+# phpstorm/webstorm — which have no multi-root projects — open COMBINED_DIR
+# (the session dir) as a single project, or both dirs as two project windows
+# when COMBINED_DIR is empty (MAIN has no session dir). Different IDEs -> each
+# worktree opens separately in its own IDE.
+open_workspace_editors() {
+  local fe_path="$1" be_path="$2" workspace_file="$3" combined_dir="$4" label="$5"
+  if [[ "$FRONTEND_IDE" != "$BACKEND_IDE" ]]; then
+    open_dir_in_ide "$FRONTEND_IDE" "$fe_path"
+    ok "$(ide_label "$FRONTEND_IDE") opened ($label — $FRONTEND_DIR_NAME)"
+    open_dir_in_ide "$BACKEND_IDE" "$be_path"
+    ok "$(ide_label "$BACKEND_IDE") opened ($label — $BACKEND_DIR_NAME)"
+    return 0
+  fi
+  case "$FRONTEND_IDE" in
+    vscode)
+      if [[ -n "$workspace_file" && -f "$workspace_file" ]]; then
+        run_cmd code -n "$workspace_file"
+      else
+        [[ -n "$workspace_file" ]] \
+          && warn "workspace file not found ($workspace_file) — opening the folders directly."
+        run_cmd code -n "$fe_path" "$be_path"
+      fi
+      ok "VS Code opened ($label)"
+      ;;
+    zed)
+      run_cmd zed -n "$fe_path" "$be_path"
+      ok "Zed opened ($label)"
+      ;;
+    phpstorm|webstorm)
+      if [[ -n "$combined_dir" ]]; then
+        run_cmd "$(ide_command "$FRONTEND_IDE")" "$combined_dir"
+        ok "$(ide_label "$FRONTEND_IDE") opened ($label — one project)"
+      else
+        open_dir_in_ide "$FRONTEND_IDE" "$fe_path"
+        open_dir_in_ide "$FRONTEND_IDE" "$be_path"
+        ok "$(ide_label "$FRONTEND_IDE") opened ($label — $FRONTEND_DIR_NAME + $BACKEND_DIR_NAME as separate projects)"
+      fi
+      ;;
+  esac
 }
 
 # ------------------------- git / workspace helpers --------------------------

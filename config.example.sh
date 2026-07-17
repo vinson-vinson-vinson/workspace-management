@@ -43,6 +43,17 @@ BACKEND_BASE_BRANCH="main"
 # "don't touch a main/base checkout" branch check. Case-insensitive.
 TASK_ID_PREFIX="CU"
 
+# IDE used to open workspaces, per repo role. Allowed values: vscode (the
+# default), phpstorm, webstorm, zed. With the SAME value on both sides,
+# `ws open` / `ws create` open the workspace combined in ONE window (vscode:
+# the .code-workspace file; zed: one multi-folder window; phpstorm/webstorm —
+# which have no multi-root projects — the session dir as a single project).
+# With DIFFERENT values, each worktree opens separately in its own IDE.
+# Needs the IDE's CLI launcher on PATH: code / phpstorm / webstorm / zed.
+# Optional; both default to vscode.
+FRONTEND_IDE="vscode"
+BACKEND_IDE="vscode"
+
 # Set to true to NOT open VS Code after `ws create`. The worktrees and the
 # .code-workspace file are still created — you open the workspace yourself
 # (e.g. via the clickable name in `ws list`). Optional; defaults to false.

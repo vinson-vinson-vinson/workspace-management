@@ -1,8 +1,8 @@
 # shellcheck shell=bash
 # -----------------------------------------------------------------------------
 # lib/cmd_create.sh — `workspaces create`: cut matching frontend+backend
-# worktrees into a session dir, write a .code-workspace, and open VS Code.
-# (Teardown lives in `workspaces remove`.)
+# worktrees into a session dir, write a .code-workspace, and open the
+# configured IDE(s). (Teardown lives in `workspaces remove`.)
 # -----------------------------------------------------------------------------
 
 cmd_create_usage() {
@@ -18,10 +18,10 @@ Rules:
     still in review. Applied per repo where the branch exists (locally or on
     origin); a repo without it falls back to its configured base, with a
     warning. Missing in both repos is an error.
-  - The VS Code workspace opens automatically (disable with
-    NO_OPEN_AFTER_CREATE=true in config.sh). On open, VS Code also starts one
-    terminal running `ws serve`, and when it finishes, one terminal per default
-    app running `yarn serve-<app>`.
+  - The workspace opens automatically in the IDE(s) named by FRONTEND_IDE /
+    BACKEND_IDE in config.sh (disable with NO_OPEN_AFTER_CREATE=true). When
+    that is VS Code, it also starts one terminal running `ws serve`, and when
+    it finishes, one terminal per default app running `yarn serve-<app>`.
 
 Options:
   -n, --neanderthal    Bare workspace: skip the auto-started serve/dev-server
@@ -129,16 +129,17 @@ add_worktree() {
   run_quiet git -C "$repo" worktree add --no-track -b "$branch" "$worktree_path" "$base_ref"
 }
 
-# Open the workspace in VS Code and print the milestone check — or, with
-# NO_OPEN_AFTER_CREATE=true in the config, do neither and say so instead.
+# Open the workspace in the configured IDE(s) and print the milestone check —
+# or, with NO_OPEN_AFTER_CREATE=true in the config, do neither and say so
+# instead. Uses cmd_create's session paths (dynamic scope).
 open_workspace() {
   local workspace_file="$1"
   if "$NO_OPEN_AFTER_CREATE"; then
-    ok "VS Code not opened (config: NO_OPEN_AFTER_CREATE)"
+    ok "IDE not opened (config: NO_OPEN_AFTER_CREATE)"
     return 0
   fi
-  run_cmd code -n "$workspace_file"
-  ok "VS Code opened"
+  open_workspace_editors "$frontend_worktree" "$backend_worktree" \
+    "$workspace_file" "$session_dir" "$branch_slug"
 }
 
 # Pick a legible title-bar foreground ("dark"/"light") for a "#rrggbb" bg using
@@ -323,8 +324,8 @@ cmd_create() {
 
   require_command git
   require_command sed
-  # `code` is only needed to open VS Code at the end.
-  "$NO_OPEN_AFTER_CREATE" || require_command code
+  # The IDE launcher(s) are only needed to open the workspace at the end.
+  "$NO_OPEN_AFTER_CREATE" || require_configured_ides
   require_repo "$FRONTEND_REPO"
   require_repo "$BACKEND_REPO"
 

@@ -1,7 +1,8 @@
 # shellcheck shell=bash
 # -----------------------------------------------------------------------------
-# lib/cmd_open.sh — `workspaces open`: open a workspace's VS Code window by its
-# `ws list` index (or slug). Just the editor — no serving, no side effects.
+# lib/cmd_open.sh — `workspaces open`: open a workspace in the configured
+# IDE(s) by its `ws list` index (or slug). Just the editor — no serving, no
+# side effects.
 # -----------------------------------------------------------------------------
 
 cmd_open_usage() {
@@ -9,11 +10,17 @@ cmd_open_usage() {
 Usage:
   ws open <N | SLUG>
 
-Opens the workspace's .code-workspace in VS Code. N is the row index printed
-by `ws list` (the # column); a workspace slug works too.
+Opens the workspace in the IDE(s) named by FRONTEND_IDE / BACKEND_IDE in
+config.sh — vscode (the default), phpstorm, webstorm, or zed. With the SAME
+IDE on both sides the workspace opens combined in one window (vscode: the
+.code-workspace; zed: one multi-folder window; phpstorm/webstorm: the session
+dir as a single project). With DIFFERENT IDEs each worktree opens separately
+in its own IDE.
 
-Index 0 (or "MAIN") is the main workspace: it opens MAIN_WORKSPACE_FILE from
-config.sh, or — if unset/missing — both main repos in one new VS Code window.
+N is the row index printed by `ws list` (the # column); a workspace slug works
+too. Index 0 (or "MAIN") is the main workspace: with VS Code it opens
+MAIN_WORKSPACE_FILE from config.sh, or — if unset/missing — both main repos in
+one new window.
 
 Options:
   -h, --help    Show this help.
@@ -25,18 +32,16 @@ Examples:
 USAGE
 }
 
-# The MAIN workspace (`ws open 0`): MAIN_WORKSPACE_FILE from the config when
-# it exists, otherwise both main repos together in one new VS Code window.
+# The MAIN workspace (`ws open 0`): the two main clones. VS Code prefers
+# MAIN_WORKSPACE_FILE when it exists; there is no session dir, so a JetBrains
+# IDE opens the repos as two project windows.
 open_main_workspace() {
-  if [[ -n "$MAIN_WORKSPACE_FILE" && -f "$MAIN_WORKSPACE_FILE" ]]; then
-    code -n "$MAIN_WORKSPACE_FILE"
-    ok "VS Code opened (MAIN — $(basename "$MAIN_WORKSPACE_FILE"))"
-    return 0
+  local workspace_file="$MAIN_WORKSPACE_FILE"
+  if [[ -n "$workspace_file" && ! -f "$workspace_file" ]]; then
+    warn "MAIN_WORKSPACE_FILE not found ($workspace_file) — opening the repos directly."
+    workspace_file=""
   fi
-  [[ -n "$MAIN_WORKSPACE_FILE" ]] \
-    && warn "MAIN_WORKSPACE_FILE not found ($MAIN_WORKSPACE_FILE) — opening the repos directly."
-  code -n "$FRONTEND_REPO" "$BACKEND_REPO"
-  ok "VS Code opened (MAIN — $FRONTEND_DIR_NAME + $BACKEND_DIR_NAME)"
+  open_workspace_editors "$FRONTEND_REPO" "$BACKEND_REPO" "$workspace_file" "" "MAIN"
 }
 
 cmd_open() {
@@ -56,7 +61,7 @@ cmd_open() {
     cmd_open_usage; exit 1
   fi
 
-  require_command code
+  require_configured_ides
 
   local slug
   if [[ "$target" =~ ^[0-9]+$ ]]; then
@@ -86,14 +91,20 @@ cmd_open() {
     fi
   fi
 
-  local workspace_file
-  workspace_file="$(workspace_file_for "$slug")"
-  [[ -f "$workspace_file" ]] || workspace_file="$(legacy_workspace_file_for "$slug")"
-  if [[ ! -f "$workspace_file" ]]; then
-    err "No workspace file for '$slug' — 'ws create $slug' regenerates it."
-    exit 1
+  local session_dir="$WORKSPACES_ROOT/$slug"
+
+  # The .code-workspace only matters when the combined window is VS Code's;
+  # every other IDE (and the split case) opens the worktree directories.
+  local workspace_file=""
+  if [[ "$FRONTEND_IDE" == "vscode" && "$BACKEND_IDE" == "vscode" ]]; then
+    workspace_file="$(workspace_file_for "$slug")"
+    [[ -f "$workspace_file" ]] || workspace_file="$(legacy_workspace_file_for "$slug")"
+    if [[ ! -f "$workspace_file" ]]; then
+      err "No workspace file for '$slug' — 'ws create $slug' regenerates it."
+      exit 1
+    fi
   fi
 
-  code -n "$workspace_file"
-  ok "VS Code opened ($slug)"
+  open_workspace_editors "$session_dir/$FRONTEND_DIR_NAME" "$session_dir/$BACKEND_DIR_NAME" \
+    "$workspace_file" "$session_dir" "$slug"
 }

@@ -111,7 +111,7 @@ Everything is one command, `workspaces` (alias `ws`), with subcommands:
 
 | Command | What it does |
 | --- | --- |
-| `ws create <slug>` | Create (or reopen) a workspace: add both worktrees, write a `.code-workspace`, open VS Code. On open, VS Code auto-runs `ws serve` and then `yarn serve-<app>` per default app, each in its own terminal; `--neanderthal` skips those tasks. |
+| `ws create <slug>` | Create (or reopen) a workspace: add both worktrees, write a `.code-workspace`, open the configured IDE(s) (`FRONTEND_IDE`/`BACKEND_IDE`, VS Code by default). When that's VS Code, it auto-runs `ws serve` and then `yarn serve-<app>` per default app, each in its own terminal; `--neanderthal` skips those tasks. |
 | `ws list` (or bare `ws`) | List all workspaces, star the one you're in, link each served one to its landing URL. The `#` column numbers the rows for `ws open`. |
 | `ws open <N\|slug>` | Open a workspace by its `ws list` index (or slug) in the IDE(s) named by `FRONTEND_IDE`/`BACKEND_IDE` — VS Code by default, or PhpStorm/WebStorm/Zed. Same IDE on both sides → one combined window; different IDEs → each worktree opens separately. Index 0 (or `MAIN`) opens the main workspace (`MAIN_WORKSPACE_FILE`, or both main repos). Just the editor — no serving, no side effects. |
 | `ws serve [slug]` | Make a workspace reachable at `<sub>.<domain>` via Valet/nginx: rewrite envs, write the nginx block, install deps. Slug defaults to the current directory. Does **not** start dev servers — it prints the `yarn serve-*` commands. |

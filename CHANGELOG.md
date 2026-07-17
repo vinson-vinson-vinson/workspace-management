@@ -9,6 +9,8 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.1.0] — 2026-07-17
+
 ### Added
 - Configurable IDEs: new `FRONTEND_IDE` / `BACKEND_IDE` config settings
   (default `vscode`; also `phpstorm`, `webstorm`, `zed`). `ws open` and
@@ -184,7 +186,8 @@ the identity change.
   own `<sub>.anny.dev` subdomain via Laravel Valet/nginx, Cognitor key
   seeding, `install.sh`, and Homebrew tap packaging.
 
-[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v1.7.0...v2.0.0
 [1.7.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v1.5.0...v1.6.0

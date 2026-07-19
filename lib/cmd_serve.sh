@@ -108,7 +108,15 @@ prepare_frontend_env() {
     return 1
   fi
   if [[ -f "$wt_env" ]] && ! "$FORCE"; then
-    vlog "Frontend env already present: $dir/.env (keeping existing; use --force to regenerate)."
+    # Keep the existing env — but HOST/PORT are not the user's to own. nginx is
+    # already proxying to port_for(), so an env that disagrees is a permanent
+    # 502 with nothing to see: serve reports success, `ws list` reports served,
+    # and the dev server logs look perfect on the wrong port. Anything that
+    # drops a .env here before serve runs (an editor, a worktree hook, an
+    # earlier checkout) otherwise pins the port to whatever main uses.
+    set_env_var "$wt_env" HOST "127.0.0.1"
+    set_env_var "$wt_env" PORT "$port"
+    vlog "Frontend env already present: $dir/.env (kept; HOST/PORT re-pinned to $port)."
     return 0
   fi
   if [[ ! -f "$main_env" ]]; then

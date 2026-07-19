@@ -9,6 +9,17 @@ when a release is tagged.
 
 ## [Unreleased]
 
+### Fixed
+- `ws serve`: re-pin `HOST`/`PORT` in an app's `.env` even when the file already
+  exists. The "keep the existing env" guard returned before the port rewrite, so
+  any `.env` already in the worktree — dropped by an editor, a worktree hook, or
+  an earlier checkout — kept the main repo's port while nginx proxied to the
+  workspace's. The result was a permanent 502 that looked like success from
+  every angle: serve printed "envs copied successfully", `ws list` showed the
+  workspace as served, and the dev server started cleanly on the wrong port.
+  Only `--force` fixed it, and nothing said so. Everything else in the file is
+  still preserved.
+
 ## [2.1.0] — 2026-07-17
 
 ### Added

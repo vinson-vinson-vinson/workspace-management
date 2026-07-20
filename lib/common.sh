@@ -347,6 +347,16 @@ open_terminal_window() {
 # still unmerged in warp#13937). Warp is not AppleScript-able either. So the
 # ceiling here is one window holding the tabs — revisit if that PR lands.
 #
+# Window-per-workspace is the current model: a launch config always spawns its
+# own window, because the URI handler hardcodes open_in_active_window=false and
+# parses no query string (unlike the tab-config deeplink beside it, which does
+# read ?new_window=). A single shared window with one collapsible group per
+# workspace needs two upstream changes — `tab_groups:`/`group:` in the schema
+# (warpdotdev/warp#13898, patch open in #13937) and a `new_window` param on the
+# launch URI (unreported). Both land on THIS mechanism, which is why tab
+# configs — which can already target the current window but have no group key,
+# proposed or otherwise — are the wrong thing to build on.
+#
 # Two constraints that fail SILENTLY if broken:
 #   - warp://launch/ resolves a NAME inside ~/.warp/launch_configurations, not
 #     a path, so the file has to be written there first.
@@ -384,6 +394,20 @@ print(json.dumps({"name": name, "windows": [{"tabs": tabs}]}, indent=2))
 
   vlog "Wrote Warp launch config: $file"
   open "warp://launch/${name}"
+}
+
+# Remove the terminal-session artefacts `ws serve` wrote for SLUG. Deliberately
+# separate from revert_serve_setup, which returns early when there is no nginx
+# block — a workspace can have a launch config without ever having been served.
+remove_session_configs() {
+  local slug="$1"
+  local file="$HOME/.warp/launch_configurations/ws-${slug}.yaml"
+  [[ -f "$file" ]] || return 0
+  if "$DRY_RUN"; then
+    printf '[dry-run] rm -f %s\n' "$file"
+    return 0
+  fi
+  rm -f "$file" && vlog "Removed Warp launch config: $file"
 }
 
 # Open the session's terminals. $1/$2 are the frontend and backend worktrees,

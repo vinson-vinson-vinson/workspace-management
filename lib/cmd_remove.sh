@@ -275,6 +275,10 @@ cmd_remove() {
 
   vlog "Removing workspace..."
 
+  # Before routing: a launch config can exist without an nginx block, and
+  # revert_serve_setup returns early in that case.
+  remove_session_configs "$slug"
+
   revert_serve_setup "$slug"
 
   # Guarded to the teeth (see _test_db_name_ok) and never fatal — a skipped

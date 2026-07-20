@@ -72,6 +72,10 @@ when a release is tagged.
   `POST_CREATE_TERMINALS` now overrides that derived set instead of being the
   only way to define it, and each tab carries its own cwd so the commands no
   longer need a `cd` prefix.
+- `ws remove` deletes the Warp launch configuration `ws serve` wrote for the
+  workspace. Without it every workspace ever created left a file behind in
+  `~/.warp/launch_configurations/`, cluttering Warp's launch-config picker
+  permanently.
 - `ws create` now serves the workspace for non-VS-Code setups. The
   `.code-workspace` tasks block only ever fires in VS Code, so since IDEs became
   configurable in 2.1.0 a Zed/PhpStorm user finished `ws create` with an

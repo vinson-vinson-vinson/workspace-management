@@ -9,6 +9,8 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.2.0] — 2026-07-20
+
 ### Added
 - `ws create` now serves the workspace for non-VS-Code setups. The
   `.code-workspace` tasks block only ever fires in VS Code, so since IDEs became
@@ -220,7 +222,8 @@ the identity change.
   own `<sub>.anny.dev` subdomain via Laravel Valet/nginx, Cognitor key
   seeding, `install.sh`, and Homebrew tap packaging.
 
-[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.1.1...HEAD
+[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v1.7.0...v2.0.0

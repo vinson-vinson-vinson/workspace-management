@@ -267,43 +267,85 @@ load_config() {
 }
 
 # --------------------------- post-create terminals --------------------------
-# Open a new terminal tab/window running COMMAND. Dispatches on TERMINAL_APP
-# from config.sh ("terminal" default; "warp" also supported).
+# Terminal.app: one `do script` per command, each opening its own tab.
 open_terminal_window() {
   local cmd="$1"
   if "$DRY_RUN"; then
     printf '[dry-run] open %s terminal: %s\n' "$TERMINAL_APP" "$cmd"
     return 0
   fi
-  case "$TERMINAL_APP" in
-    warp)
-      # Warp has no CLI; the URL scheme is the only documented way in. The
-      # command has to be percent-encoded whole — semicolons delimit multiple
-      # commands and would otherwise split it.
-      local encoded
-      encoded="$(printf '%s' "$cmd" | python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read(), safe=""))')"
-      open "warp://launch?cmd=${encoded}"
-      ;;
-    *)
-      # Terminal.app: do script opens a new tab running the command.
-      osascript -e "tell application \"Terminal\" to do script \"$cmd\""
-      ;;
-  esac
+  osascript -e "tell application \"Terminal\" to do script \"$cmd\""
 }
 
-# Open terminal windows for every command in POST_CREATE_TERMINALS. $1 and $2
-# are the frontend and backend worktree paths (substituted for $WT_FRONTEND /
+# Warp: one launch configuration holding every command as its own tab, opened
+# via warp://launch/<name>.
+#
+# Warp has no CLI, and its URL scheme cannot carry a command — `warp://action/
+# new_tab?path=` only sets a directory. A launch configuration is the one
+# documented way to start a tab that runs something. It is also nicer than the
+# alternative: one window of N tabs rather than N scattered windows.
+#
+# Two constraints that fail SILENTLY if broken, hence the care here:
+#   - warp://launch/ resolves a NAME inside ~/.warp/launch_configurations, not
+#     a path, so the file has to be written there first.
+#   - cwd must be absolute; a tilde or relative path makes Warp skip the config
+#     without any error.
+open_warp_launch_config() {
+  local name="$1" cwd="$2"; shift 2
+  local dir="$HOME/.warp/launch_configurations"
+  local file="$dir/${name}.yaml"
+
+  if "$DRY_RUN"; then
+    printf '[dry-run] write %s (%d tab(s)) ; open warp://launch/%s\n' "$file" "$#" "$name"
+    local c
+    for c in "$@"; do printf '[dry-run]   tab: %s\n' "$c"; done
+    return 0
+  fi
+
+  mkdir -p "$dir"
+  # Emitted by python3 (already a dependency) because these commands contain
+  # &&, $ and quotes — hand-rolled YAML quoting is how you get a config Warp
+  # silently refuses to load. JSON is valid YAML, so json.dump is safe here.
+  python3 -c '
+import json, sys
+name, cwd = sys.argv[1], sys.argv[2]
+tabs = [{"title": c.split("&&")[-1].strip()[:24] or "tab",
+         "layout": {"cwd": cwd, "commands": [{"exec": c}]}}
+        for c in sys.argv[3:]]
+print(json.dumps({"name": name, "windows": [{"tabs": tabs}]}, indent=2))
+' "$name" "$cwd" "$@" > "$file" || { warn "Could not write the Warp launch config."; return 1; }
+
+  vlog "Wrote Warp launch config: $file"
+  open "warp://launch/${name}"
+}
+
+# Open terminal tabs for every command in POST_CREATE_TERMINALS. $1 and $2 are
+# the frontend and backend worktree paths (substituted for $WT_FRONTEND /
 # $WT_BACKEND in each command).
 auto_open_terminals() {
   local wt_fe="$1" wt_be="$2"
   [[ ${#POST_CREATE_TERMINALS[@]} -gt 0 ]] || return 0
+
   local cmd
+  local -a cmds=()
   for cmd in "${POST_CREATE_TERMINALS[@]}"; do
     cmd="${cmd//\$WT_FRONTEND/$wt_fe}"
     cmd="${cmd//\$WT_BACKEND/$wt_be}"
-    vlog "Opening terminal: $cmd"
-    open_terminal_window "$cmd"
+    vlog "Terminal command: $cmd"
+    cmds+=("$cmd")
   done
+
+  case "$TERMINAL_APP" in
+    warp)
+      # Named after the workspace so re-creating it overwrites its own config
+      # instead of littering ~/.warp/launch_configurations.
+      local session_dir; session_dir="$(dirname "$wt_fe")"
+      open_warp_launch_config "ws-$(basename "$session_dir")" "$session_dir" "${cmds[@]}"
+      ;;
+    *)
+      for cmd in "${cmds[@]}"; do open_terminal_window "$cmd"; done
+      ;;
+  esac
 }
 
 # Whether `ws create` should open POST_CREATE_TERMINALS at all. An all-VS-Code

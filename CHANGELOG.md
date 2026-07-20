@@ -9,6 +9,14 @@ when a release is tagged.
 
 ## [Unreleased]
 
+### Fixed
+- `ws serve`: the backend's own JS dependencies are now provisioned too —
+  `node_modules` is cloned from the main repo exactly like `vendor/`. Without
+  it, `php artisan horizon:watch` died in every worktree (chokidar, via mjml,
+  couldn't resolve) and mail rendering lacked mjml. Warn-only when the main
+  repo has no `node_modules`; existing workspaces pick it up on the next
+  `ws serve`.
+
 ## [2.3.0] — 2026-07-20
 
 ### Added

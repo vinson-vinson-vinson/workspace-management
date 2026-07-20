@@ -531,6 +531,26 @@ setup_dependencies() {
     vlog "Cloned vendor into worktree."
   fi
 
+  # Backend node_modules, same clone treatment as vendor: the backend has its
+  # own JS deps (mjml for mails; chokidar, which `artisan horizon:watch` dies
+  # without). Warn-only when main has none — the app boots fine without them,
+  # only horizon:watch / mail rendering need it, so don't fail the whole serve.
+  if [[ -e "$WT_BACKEND/node_modules" ]]; then
+    vlog "Backend node_modules already present in worktree (skipping)."
+  elif "$DRY_RUN"; then
+    printf '[dry-run] cp -Rc %s %s (clone backend node_modules)\n' \
+      "$BACKEND_REPO/node_modules" "$WT_BACKEND/node_modules"
+    ok "backend node_modules cloned"
+  elif [[ ! -d "$BACKEND_REPO/node_modules" ]]; then
+    warn "Main backend has no node_modules — 'artisan horizon:watch' and mail rendering won't work in the worktree (run 'yarn' in $BACKEND_REPO, then re-run 'ws serve')."
+  else
+    spin "cloning backend node_modules"
+    cp -Rc "$BACKEND_REPO/node_modules" "$WT_BACKEND/node_modules" 2>/dev/null \
+      || cp -R "$BACKEND_REPO/node_modules" "$WT_BACKEND/node_modules"
+    spin_ok "backend node_modules cloned"
+    vlog "Cloned backend node_modules into worktree."
+  fi
+
   # Frontend: install real dependencies with Yarn. We deliberately do NOT symlink
   # node_modules from the main repo — a symlink is confusing (stack traces point
   # back at the main clone) and couples the worktree to main. Yarn's postinstall

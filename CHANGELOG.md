@@ -9,6 +9,8 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.2.1] — 2026-07-20
+
 ### Fixed
 - `ws remove`: self-heals from half-deleted worktrees (directory present but
   its `.git` link gone — e.g. after an interrupted removal). Stale
@@ -232,7 +234,8 @@ the identity change.
   own `<sub>.anny.dev` subdomain via Laravel Valet/nginx, Cognitor key
   seeding, `install.sh`, and Homebrew tap packaging.
 
-[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.2.1...HEAD
+[2.2.1]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.0.0...v2.1.0

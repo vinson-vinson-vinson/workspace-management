@@ -847,10 +847,9 @@ _ws_landing_box() {
   fi
   printf '  %s\n' "$(ws_grad "╰${rule}╯" "$(( w + 2 ))")"
 
-  # `ws serve` on its own doesn't start dev servers, so hand over the exact
-  # command. But when `ws create` is about to open the session terminals, that
-  # advice is worse than useless — following it starts a second copy of the
-  # server on a port the first one already holds.
+  # A bare `ws serve` starts no dev server, so hand over the command. After
+  # `ws create` the terminals are already running it — repeating the advice
+  # would start a second copy on the same port.
   if "$WS_TERMINALS_PENDING"; then
     printf '\n  %sstarting the dev servers in %s…%s\n\n' \
       "$C_DIM" "$TERMINAL_APP" "$C_RESET"

@@ -270,16 +270,12 @@ load_config() {
   TEST_DB_PASSWORD="${TEST_DB_PASSWORD:-}"
   # Terminal opened for post-create commands (e.g. yarn serve-*, an agent).
   TERMINAL_APP="${TERMINAL_APP:-terminal}"
-  # Set by `ws create` when it will open the session terminals right after
-  # serve returns; a bare `ws serve` leaves it false and keeps the hand-over.
+  # Set by `ws create` when it opens the terminals itself (see cmd_create).
   WS_TERMINALS_PENDING="${WS_TERMINALS_PENDING:-false}"
   # Commands auto-started in terminal tabs after ws create. $WT_FRONTEND and
   # $WT_BACKEND are substituted at runtime. Same +"" guard as above.
   POST_CREATE_TERMINALS=(${POST_CREATE_TERMINALS[@]+"${POST_CREATE_TERMINALS[@]}"})
-  # Tabs beyond the served apps: "NAME:frontend|backend:COMMAND". The app tabs
-  # are derived (one `yarn serve-<app>` per served app) because serving is what
-  # `ws serve` is for; everything else — queue workers, schedulers, however many
-  # agents you want, in whichever repo — is yours to declare.
+  # Tabs beyond the served apps: "NAME:frontend|backend:COMMAND".
   SESSION_TABS=(${SESSION_TABS[@]+"${SESSION_TABS[@]}"})
   [[ ${#SESSION_TABS[@]} -gt 0 ]] || SESSION_TABS=(
     "queue:backend:php artisan horizon"
@@ -289,20 +285,13 @@ load_config() {
 }
 
 # ------------------------------ session tabs --------------------------------
-# ONE definition of what a workspace's terminals are, rendered by whichever
-# terminal is configured. Without this each backend grew its own idea of the
-# tab set and they drifted apart.
+# One definition of a workspace's terminals, rendered by whichever terminal is
+# configured, so the backends can't drift apart. App tabs are derived (one
+# `yarn serve-<app>` each); everything else comes from SESSION_TABS, and
+# POST_CREATE_TERMINALS replaces the whole set.
 #
-#   admin / shop     one per served app -> yarn serve-<app>  (frontend wt)
-#   <SESSION_TABS>   whatever you declared — queue workers, agents, anything
-#
-# Only the app tabs are derived, because serving them is what `ws serve` does.
-# Everything else is config: how many agents, in which repo, or none at all.
-#
-# Emits one tab per line as NAME<TAB>CWD<TAB>COMMAND. Tab-separated because the
-# commands contain spaces, quotes and && — anything else needs quoting rules.
-# POST_CREATE_TERMINALS, when set, replaces the derived set entirely: it is the
-# escape hatch for a layout this doesn't cover.
+# Emits NAME<TAB>CWD<TAB>COMMAND per line — tab-separated because the commands
+# contain spaces, quotes and &&.
 session_tabs() {
   local fe="$1" be="$2"; shift 2
   local -a apps=("$@")
@@ -346,28 +335,10 @@ open_terminal_window() {
   osascript -e "tell application \"Terminal\" to do script \"$cmd\""
 }
 
-# Warp: one launch configuration holding every tab, opened via
-# warp://launch/<name>.
-#
-# Warp has no CLI, and its URL scheme cannot carry a command — warp://action/
-# new_tab?path= only sets a directory, and warp://launch?cmd= is not a scheme
-# at all (open exits 0 because a warp:// handler exists, so it fails silently).
-# A launch configuration is the one documented way to start a tab that runs
-# something. Warp does have tab groups, but only as a UI gesture: the launch
-# configuration schema carries no group list or per-tab membership (warp#13898,
-# which Warp triaged as a real gap; the patch adding `tab_groups:`/`group:` is
-# still unmerged in warp#13937). Warp is not AppleScript-able either. So the
-# ceiling here is one window holding the tabs — revisit if that PR lands.
-#
-# Window-per-workspace is the current model: a launch config always spawns its
-# own window, because the URI handler hardcodes open_in_active_window=false and
-# parses no query string (unlike the tab-config deeplink beside it, which does
-# read ?new_window=). A single shared window with one collapsible group per
-# workspace needs two upstream changes — `tab_groups:`/`group:` in the schema
-# (warpdotdev/warp#13898, patch open in #13937) and a `new_window` param on the
-# launch URI (unreported). Both land on THIS mechanism, which is why tab
-# configs — which can already target the current window but have no group key,
-# proposed or otherwise — are the wrong thing to build on.
+# Warp: one launch configuration holding every tab, opened by name. Warp has no
+# CLI and its URI scheme can't carry a command, so a launch config is the only
+# way to start a tab that runs something. Each config opens its own window;
+# grouping the tabs instead needs warpdotdev/warp#13898 (+#13937).
 #
 # Two constraints that fail SILENTLY if broken:
 #   - warp://launch/ resolves a NAME inside ~/.warp/launch_configurations, not
@@ -408,9 +379,9 @@ print(json.dumps({"name": name, "windows": [{"tabs": tabs}]}, indent=2))
   open "warp://launch/${name}"
 }
 
-# Remove the terminal-session artefacts `ws serve` wrote for SLUG. Deliberately
-# separate from revert_serve_setup, which returns early when there is no nginx
-# block — a workspace can have a launch config without ever having been served.
+# Remove what `ws serve` wrote for SLUG. Separate from revert_serve_setup,
+# which returns early without an nginx block — a workspace can have a launch
+# config without having been served.
 remove_session_configs() {
   local slug="$1"
   local file="$HOME/.warp/launch_configurations/ws-${slug}.yaml"
@@ -452,10 +423,8 @@ TABS
   esac
 }
 
-# Decide whether `ws create` should open the session terminals at all. Two
-# mechanisms already claim that job in other configurations, and running two of
-# them means two copies of every dev server fighting over the same port:
-#   - all-VS-Code workspaces start theirs from the .code-workspace tasks block
+# All-VS-Code workspaces start these from the .code-workspace tasks block;
+# running both would start every dev server twice on the same port.
 auto_open_terminals_if_needed() {
   local wt_fe="$1" wt_be="$2"; shift 2
   [[ "$FRONTEND_IDE" == "vscode" && "$BACKEND_IDE" == "vscode" ]] && return 0

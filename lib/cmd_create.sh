@@ -153,6 +153,13 @@ auto_serve_if_needed() {
   fi
   # VS Code handles serve + dev servers via .code-workspace tasks.
   [[ "$FRONTEND_IDE" == "vscode" && "$BACKEND_IDE" == "vscode" ]] && return 0
+  # The child process parses its own flags, so --dry-run would NOT propagate —
+  # without this guard a dry-run create performed a fully real serve (env
+  # writes, dependency install, nginx + sudo) on an existing workspace.
+  if "$DRY_RUN"; then
+    printf '[dry-run] %s serve %s\n' "$WSM_HOME/workspaces" "$branch_slug"
+    return 0
+  fi
   # `|| true`: a failed serve must not abort create — the worktrees exist and
   # are usable, and serve prints its own diagnosis.
   log "Serving workspace…"

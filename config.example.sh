@@ -93,9 +93,12 @@ TERMINAL_APP="terminal"
 # each. $WT_FRONTEND and $WT_BACKEND are substituted with the session worktree
 # paths at runtime, so each command has to cd itself. Leave the array empty to
 # skip. Optional; defaults to empty.
+# SINGLE quotes are load-bearing: the literal string $WT_FRONTEND must survive
+# into the array. Double-quoted, the shell expands it while sourcing this file
+# — where it is unset — and every `ws` command dies with "unbound variable".
 POST_CREATE_TERMINALS=(
-  # "cd $WT_FRONTEND && yarn serve-admin"
-  # "cd $WT_BACKEND && claude"
+  # 'cd $WT_FRONTEND && yarn serve-admin'
+  # 'cd $WT_BACKEND && claude'
 )
 
 # ------------------------------ serving (ws serve) ---------------------------

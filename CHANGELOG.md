@@ -20,10 +20,12 @@ when a release is tagged.
   their own terminal tabs after `ws create` — the non-VS-Code counterpart to
   the tasks block, e.g. `yarn serve-<app>` per app plus an agent.
   `$WT_FRONTEND` / `$WT_BACKEND` are substituted with the session worktree
-  paths at runtime. The new `TERMINAL_APP` setting picks the terminal:
-  `terminal` (default, via `osascript`) or `warp` (via its URL scheme). Skipped
-  entirely for all-VS-Code workspaces, which would otherwise start every dev
-  server twice and collide on ports.
+  paths at runtime — single-quote the entries so the literal `$WT_…` survives
+  config loading. The new `TERMINAL_APP` setting picks the terminal:
+  `terminal` (default, via `osascript`) or `warp` (via a generated launch
+  configuration — Warp's URL scheme can't carry commands). Skipped entirely
+  for all-VS-Code workspaces, which would otherwise start every dev server
+  twice and collide on ports.
 
 ## [2.1.1] — 2026-07-20
 

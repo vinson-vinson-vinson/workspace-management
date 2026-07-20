@@ -847,9 +847,16 @@ _ws_landing_box() {
   fi
   printf '  %s\n' "$(ws_grad "╰${rule}╯" "$(( w + 2 ))")"
 
-  # That URL is dead until its dev server is up — serve deliberately doesn't
-  # start it, so hand over the exact command.
-  local key; key="$(printf '%s' "$label" | tr '[:upper:]' '[:lower:]')"
-  printf '\n  %sstart it with:%s cd %q && yarn serve-%s\n\n' \
-    "$C_DIM" "$C_RESET" "$WT_FRONTEND" "$key"
+  # `ws serve` on its own doesn't start dev servers, so hand over the exact
+  # command. But when `ws create` is about to open the session terminals, that
+  # advice is worse than useless — following it starts a second copy of the
+  # server on a port the first one already holds.
+  if "$WS_TERMINALS_PENDING"; then
+    printf '\n  %sstarting the dev servers in %s…%s\n\n' \
+      "$C_DIM" "$TERMINAL_APP" "$C_RESET"
+  else
+    local key; key="$(printf '%s' "$label" | tr '[:upper:]' '[:lower:]')"
+    printf '\n  %sstart it with:%s cd %q && yarn serve-%s\n\n' \
+      "$C_DIM" "$C_RESET" "$WT_FRONTEND" "$key"
+  fi
 }

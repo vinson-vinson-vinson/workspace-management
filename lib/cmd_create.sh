@@ -162,8 +162,15 @@ auto_serve_if_needed() {
   fi
   # `|| true`: a failed serve must not abort create — the worktrees exist and
   # are usable, and serve prints its own diagnosis.
+  #
+  # WS_TERMINALS_PENDING tells serve that create will open the session terminals
+  # the moment it returns, so its landing box says "starting these for you"
+  # instead of handing over a `yarn serve-…` command that would start a second
+  # copy. serve runs as its own process and can't otherwise know. Reaching this
+  # line already means terminals are coming: the all-VS-Code and --neanderthal
+  # cases returned above.
   log "Serving workspace…"
-  WSM_HOME="$WSM_HOME" "$WSM_HOME/workspaces" serve "$branch_slug" || true
+  WS_TERMINALS_PENDING=true WSM_HOME="$WSM_HOME" "$WSM_HOME/workspaces" serve "$branch_slug" || true
 }
 
 # Pick a legible title-bar foreground ("dark"/"light") for a "#rrggbb" bg using

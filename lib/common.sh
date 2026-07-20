@@ -270,6 +270,9 @@ load_config() {
   TEST_DB_PASSWORD="${TEST_DB_PASSWORD:-}"
   # Terminal opened for post-create commands (e.g. yarn serve-*, an agent).
   TERMINAL_APP="${TERMINAL_APP:-terminal}"
+  # Set by `ws create` when it will open the session terminals right after
+  # serve returns; a bare `ws serve` leaves it false and keeps the hand-over.
+  WS_TERMINALS_PENDING="${WS_TERMINALS_PENDING:-false}"
   # Commands auto-started in terminal tabs after ws create. $WT_FRONTEND and
   # $WT_BACKEND are substituted at runtime. Same +"" guard as above.
   POST_CREATE_TERMINALS=(${POST_CREATE_TERMINALS[@]+"${POST_CREATE_TERMINALS[@]}"})

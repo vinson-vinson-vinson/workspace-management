@@ -74,6 +74,13 @@ when a release is tagged.
   in. `POST_CREATE_TERMINALS` overrides the whole set instead of being the only
   way to define it, and each tab carries its own cwd so commands no longer need
   a `cd` prefix.
+- `ws create` no longer tells you to start the dev servers it just started. The
+  landing box's `start it with: cd … && yarn serve-<app>` hand-over is right
+  for a bare `ws serve`, which starts nothing, but after `ws create` the
+  session terminals are already running those commands — following the advice
+  would start a second copy on a port the first one holds. `create` now tells
+  `serve` (a separate process, so it can't otherwise know) that terminals are
+  coming, and the box says so instead.
 - `ws remove` deletes the Warp launch configuration `ws serve` wrote for the
   workspace. Without it every workspace ever created left a file behind in
   `~/.warp/launch_configurations/`, cluttering Warp's launch-config picker

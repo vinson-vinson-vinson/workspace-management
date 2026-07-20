@@ -81,8 +81,14 @@ compute_port_base() {
 port_for() { printf '%s' "$(( PORT_BASE + $(app_offset "$1") ))"; }
 
 # Set KEY=VALUE in an env file (replace if present, append otherwise).
+# No-op when the exact line is already there: sed -i rewrites the file (and
+# bumps its mtime) even for identical content, and serve re-pins HOST/PORT on
+# every run — a running dev server watching the .env would restart for nothing.
 set_env_var() {
   local file="$1" key="$2" val="$3"
+  if grep -qxF "${key}=${val}" "$file" 2>/dev/null; then
+    return 0
+  fi
   if grep -qE "^${key}=" "$file"; then
     sed -i '' -E "s#^${key}=.*#${key}=${val}#" "$file"
   else

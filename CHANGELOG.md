@@ -19,6 +19,9 @@ when a release is tagged.
   workspace as served, and the dev server started cleanly on the wrong port.
   Only `--force` fixed it, and nothing said so. Everything else in the file is
   still preserved.
+- `ws serve`: `set_env_var` no-ops when the exact `KEY=value` line is already
+  present, so the HOST/PORT re-pin on every serve run doesn't bump the `.env`
+  mtime — a running dev server watching the file would restart for nothing.
 
 ## [2.1.0] — 2026-07-17
 

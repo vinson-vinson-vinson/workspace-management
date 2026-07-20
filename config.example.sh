@@ -102,7 +102,9 @@ EXTRA_WORKSPACE_FOLDERS=(
 # What differs is the container, which is a capability limit, not a choice:
 #   terminal  one tab per command in Terminal.app
 #   warp      ONE window holding the tabs, via a generated launch configuration
-#             (Warp has no CLI and its URI scheme can't carry a command)
+#             (Warp has no CLI and its URI scheme can't carry a command). Warp
+#             does have tab groups, but only as a UI gesture — launch configs
+#             can't declare them yet (warp#13898 / PR warp#13937).
 #   cmux      a named, collapsible sidebar GROUP — the only one with grouping.
 #             Driven from `ws serve` instead of `ws create`, so the tabs start
 #             after dependencies are installed, and `ws remove` closes the whole

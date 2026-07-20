@@ -335,8 +335,11 @@ open_terminal_window() {
 # new_tab?path= only sets a directory, and warp://launch?cmd= is not a scheme
 # at all (open exits 0 because a warp:// handler exists, so it fails silently).
 # A launch configuration is the one documented way to start a tab that runs
-# something. Warp has no grouping equivalent to a cmux workspace group, so the
-# ceiling here is one window holding the tabs.
+# something. Warp does have tab groups, but only as a UI gesture: the launch
+# configuration schema carries no group list or per-tab membership (warp#13898,
+# which Warp triaged as a real gap; the patch adding `tab_groups:`/`group:` is
+# still unmerged in warp#13937). Warp is not AppleScript-able either. So the
+# ceiling here is one window holding the tabs — revisit if that PR lands.
 #
 # Two constraints that fail SILENTLY if broken:
 #   - warp://launch/ resolves a NAME inside ~/.warp/launch_configurations, not

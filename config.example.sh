@@ -85,17 +85,50 @@ EXTRA_WORKSPACE_FOLDERS=(
 # workspace starts these same commands from its .code-workspace tasks block,
 # and running both would start every dev server twice.
 
-# Terminal app used for auto-opening command tabs after `ws create`:
-# "terminal" (default) or "warp". Optional.
+# Terminal app used for the workspace's terminals: "terminal" (default),
+# "warp", or "cmux". Optional.
+#
+# All three render the SAME set of tabs, derived from the served apps:
+#
+#   admin          yarn serve-admin        (frontend worktree)
+#   shop           yarn serve-shop         (frontend worktree)
+#   bookings-api   SESSION_BACKEND_CMDS    (backend worktree)
+#   agent (api)    SESSION_AGENT_CMD       (backend worktree)
+#   agent (ui)     SESSION_AGENT_CMD       (frontend worktree)
+#
+# One agent per repo, not per workspace: an agent inherits the AGENTS.md and
+# branch conventions of the directory it starts in, and the repos differ.
+#
+# What differs is the container, which is a capability limit, not a choice:
+#   terminal  one tab per command in Terminal.app
+#   warp      ONE window holding the tabs, via a generated launch configuration
+#             (Warp has no CLI and its URI scheme can't carry a command)
+#   cmux      a named, collapsible sidebar GROUP — the only one with grouping.
+#             Driven from `ws serve` instead of `ws create`, so the tabs start
+#             after dependencies are installed, and `ws remove` closes the whole
+#             group before removing the worktrees. Needs cmux >= 0.64.19 with
+#             automation.socketControlMode set to "password" or "allowAll";
+#             the default "cmuxOnly" refuses outside connections, which `ws` is.
 TERMINAL_APP="terminal"
 
-# Commands auto-started in terminal tabs after `ws create` finishes, one tab
-# each. $WT_FRONTEND and $WT_BACKEND are substituted with the session worktree
-# paths at runtime, so each command has to cd itself. Leave the array empty to
-# skip. Optional; defaults to empty.
+# Overrides the derived tab set above with your own commands, one tab each.
+# $WT_FRONTEND and $WT_BACKEND are substituted with the session worktree paths
+# at runtime. Leave empty to use the derived set. Optional; defaults to empty.
 POST_CREATE_TERMINALS=(
   # "cd $WT_FRONTEND && yarn serve-admin"
   # "cd $WT_BACKEND && claude"
+)
+
+# Command run in the two agent tabs — one per repo.
+# Optional; defaults to "claude".
+SESSION_AGENT_CMD="claude"
+
+# Backend tabs beside the agent (queue workers, schedulers). The frontend tabs
+# are derived from the served apps, so only the backend needs listing.
+# Optional; defaults to ("php artisan horizon").
+SESSION_BACKEND_CMDS=(
+  # "php artisan horizon"
+  # "php artisan schedule:work"
 )
 
 # ------------------------------ serving (ws serve) ---------------------------

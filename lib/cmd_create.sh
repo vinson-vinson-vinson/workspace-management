@@ -423,7 +423,7 @@ cmd_create() {
       sync_scm_ignores
       open_workspace "$workspace_file"
       auto_serve_if_needed
-      auto_open_terminals_if_needed "$frontend_worktree" "$backend_worktree"
+      auto_open_terminals_if_needed "$frontend_worktree" "$backend_worktree" "${DEFAULT_APPS[@]}"
       exit 0
     fi
     err "Both worktree paths exist, but at least one is not registered as git worktree. Refusing."
@@ -478,7 +478,7 @@ cmd_create() {
   # Checked last, once it has actually happened — not announced in advance.
   open_workspace "$workspace_file"
   auto_serve_if_needed
-  auto_open_terminals_if_needed "$frontend_worktree" "$backend_worktree"
+  auto_open_terminals_if_needed "$frontend_worktree" "$backend_worktree" "${DEFAULT_APPS[@]}"
 
   trap - EXIT
 }

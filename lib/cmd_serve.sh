@@ -47,6 +47,10 @@ USAGE
 # claim "dependencies installed successfully" over the top of a warning.
 DEPS_OK=true
 
+# Set to false when TERMINAL_APP=cmux but the session could not be started, so
+# the landing box falls back to telling you how to start the servers by hand.
+CMUX_OK=true
+
 # ------------------------------ app registry --------------------------------
 # The registry lives in config.sh as APPS=("key:dir:route:offset" …) and
 # DEFAULT_APPS=(…). Only apps with a matching .env (or .env.example) get served.
@@ -768,6 +772,21 @@ cmd_serve() {
     warn "dependencies incomplete — see the warnings above."
   fi
 
+  # 4) terminal session (last — the tabs run `yarn serve-*` and `artisan`,
+  #    which need the dependencies above to already be installed). Only cmux is
+  #    driven from here: Warp/Terminal tabs stay in `ws create`, since they are
+  #    fire-and-forget windows with nothing to attach to afterwards.
+  if [[ "$TERMINAL_APP" == "cmux" ]]; then
+    if start_cmux_session "$slug" "$host" "$session_dir" "$WT_FRONTEND" "$WT_BACKEND" "${served_apps[@]}"; then
+      ok "cmux session started successfully"
+    else
+      # Deliberately not folded into DEPS_OK: routing and envs are fine, so the
+      # URL still works once the servers are started by hand.
+      warn "cmux session not started — start the servers yourself (see below)."
+      CMUX_OK=false
+    fi
+  fi
+
   # Detail only under -v; the checks above already say what happened.
   vlog ""
   vlog "Status: '$slug' is served at https://$host"
@@ -829,7 +848,12 @@ _ws_landing_box() {
 
   # That URL is dead until its dev server is up — serve deliberately doesn't
   # start it, so hand over the exact command.
-  local key; key="$(printf '%s' "$label" | tr '[:upper:]' '[:lower:]')"
-  printf '\n  %sstart it with:%s cd %q && yarn serve-%s\n\n' \
-    "$C_DIM" "$C_RESET" "$WT_FRONTEND" "$key"
+  if [[ "$TERMINAL_APP" == "cmux" ]] && "$CMUX_OK"; then
+    printf '\n  %sserving in cmux:%s the tabs are running — open the "%s" group in the sidebar\n\n' \
+      "$C_DIM" "$C_RESET" "$slug"
+  else
+    local key; key="$(printf '%s' "$label" | tr '[:upper:]' '[:lower:]')"
+    printf '\n  %sstart it with:%s cd %q && yarn serve-%s\n\n' \
+      "$C_DIM" "$C_RESET" "$WT_FRONTEND" "$key"
+  fi
 }

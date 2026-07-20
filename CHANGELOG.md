@@ -10,6 +10,26 @@ when a release is tagged.
 ## [Unreleased]
 
 ### Added
+- `TERMINAL_APP="cmux"`: the workspace's terminals become a cmux workspace
+  *group* — a named, collapsible sidebar section — built from `ws serve`
+  instead of `ws create`. Two things follow from moving it there: the tabs
+  start only *after* dependencies are installed, and `ws remove` closes the
+  whole group before removing the worktrees, so dev servers no longer hold
+  files open against `git worktree remove`. Re-serving an open workspace leaves
+  the existing group alone rather than stacking a second copy of every server.
+  Needs cmux >= 0.64.19 with `automation.socketControlMode` set to `password`
+  or `allowAll` — the default `cmuxOnly` refuses connections from outside cmux,
+  which `ws` always is.
+- One definition of the tab set, shared by every terminal: `admin`/`shop` (one
+  per served app), `bookings-api` (`SESSION_BACKEND_CMDS`, default
+  `php artisan horizon`), and an agent tab per repo — `agent (api)` and
+  `agent (ui)` (`SESSION_AGENT_CMD`, default `claude`), since an agent inherits
+  the conventions of the directory it starts in. Previously each terminal grew
+  its own idea of the tab set and they drifted. `POST_CREATE_TERMINALS` now
+  overrides the derived set rather than being the only way to define it, and
+  `CMUX_AGENT_CMD`/`CMUX_BACKEND_CMDS` keep working as fallbacks. What differs
+  per terminal is only the container, which is a capability limit: cmux gives a
+  real collapsible group, Warp one window of tabs, Terminal.app one tab each.
 - `ws create` now serves the workspace for non-VS-Code setups. The
   `.code-workspace` tasks block only ever fires in VS Code, so since IDEs became
   configurable in 2.1.0 a Zed/PhpStorm user finished `ws create` with an

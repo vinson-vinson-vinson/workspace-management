@@ -264,6 +264,57 @@ load_config() {
   # Commands auto-started in terminal tabs after ws create. $WT_FRONTEND and
   # $WT_BACKEND are substituted at runtime. Same +"" guard as above.
   POST_CREATE_TERMINALS=(${POST_CREATE_TERMINALS[@]+"${POST_CREATE_TERMINALS[@]}"})
+  # Agent started in each repo's agent tab. One per repo, not one per
+  # workspace: an agent inherits the CLAUDE.md and branch conventions of the
+  # directory it starts in, and the two repos differ on both.
+  # CMUX_* names kept as fallbacks so configs predating the rename keep working.
+  SESSION_AGENT_CMD="${SESSION_AGENT_CMD:-${CMUX_AGENT_CMD:-claude}}"
+  # Backend tabs beside the agent (queue workers, schedulers). The frontend
+  # tabs are derived from the served apps, so only the backend needs listing.
+  SESSION_BACKEND_CMDS=(${SESSION_BACKEND_CMDS[@]+"${SESSION_BACKEND_CMDS[@]}"})
+  [[ ${#SESSION_BACKEND_CMDS[@]} -gt 0 ]] \
+    || SESSION_BACKEND_CMDS=(${CMUX_BACKEND_CMDS[@]+"${CMUX_BACKEND_CMDS[@]}"})
+  [[ ${#SESSION_BACKEND_CMDS[@]} -gt 0 ]] \
+    || SESSION_BACKEND_CMDS=('php artisan horizon')
+}
+
+# ------------------------------ session tabs --------------------------------
+# ONE definition of what a workspace's terminals are, rendered by whichever
+# terminal is configured. Without this each backend grew its own idea of the
+# tab set and they drifted apart.
+#
+#   admin / shop     one per served app   -> yarn serve-<app>   (frontend wt)
+#   bookings-api     SESSION_BACKEND_CMDS -> e.g. artisan horizon (backend wt)
+#   agent (api)      SESSION_AGENT_CMD                          (backend wt)
+#   agent (ui)       SESSION_AGENT_CMD                          (frontend wt)
+#
+# Emits one tab per line as NAME<TAB>CWD<TAB>COMMAND. Tab-separated because the
+# commands contain spaces, quotes and && — anything else needs quoting rules.
+# POST_CREATE_TERMINALS, when set, replaces the derived set entirely: it is the
+# escape hatch for a layout this doesn't cover.
+session_tabs() {
+  local fe="$1" be="$2"; shift 2
+  local -a apps=("$@")
+  local app cmd
+
+  if [[ ${#POST_CREATE_TERMINALS[@]} -gt 0 ]]; then
+    for cmd in "${POST_CREATE_TERMINALS[@]}"; do
+      cmd="${cmd//\$WT_FRONTEND/$fe}"
+      cmd="${cmd//\$WT_BACKEND/$be}"
+      # Name the tab after the tail of the command ("… && yarn serve-admin").
+      printf '%s\t%s\t%s\n' "${cmd##*&& }" "$(dirname "$fe")" "$cmd"
+    done
+    return 0
+  fi
+
+  for app in ${apps[@]+"${apps[@]}"}; do
+    printf '%s\t%s\t%s\n' "$app" "$fe" "yarn serve-$app"
+  done
+  for cmd in "${SESSION_BACKEND_CMDS[@]}"; do
+    printf '%s\t%s\t%s\n' "$(basename "$be")" "$be" "$cmd"
+  done
+  printf '%s\t%s\t%s\n' "agent (api)" "$be" "$SESSION_AGENT_CMD"
+  printf '%s\t%s\t%s\n' "agent (ui)"  "$fe" "$SESSION_AGENT_CMD"
 }
 
 # --------------------------- post-create terminals --------------------------
@@ -277,84 +328,344 @@ open_terminal_window() {
   osascript -e "tell application \"Terminal\" to do script \"$cmd\""
 }
 
-# Warp: one launch configuration holding every command as its own tab, opened
-# via warp://launch/<name>.
+# Warp: one launch configuration holding every tab, opened via
+# warp://launch/<name>.
 #
-# Warp has no CLI, and its URL scheme cannot carry a command — `warp://action/
-# new_tab?path=` only sets a directory. A launch configuration is the one
-# documented way to start a tab that runs something. It is also nicer than the
-# alternative: one window of N tabs rather than N scattered windows.
+# Warp has no CLI, and its URL scheme cannot carry a command — warp://action/
+# new_tab?path= only sets a directory, and warp://launch?cmd= is not a scheme
+# at all (open exits 0 because a warp:// handler exists, so it fails silently).
+# A launch configuration is the one documented way to start a tab that runs
+# something. Warp has no grouping equivalent to a cmux workspace group, so the
+# ceiling here is one window holding the tabs.
 #
-# Two constraints that fail SILENTLY if broken, hence the care here:
+# Two constraints that fail SILENTLY if broken:
 #   - warp://launch/ resolves a NAME inside ~/.warp/launch_configurations, not
 #     a path, so the file has to be written there first.
 #   - cwd must be absolute; a tilde or relative path makes Warp skip the config
 #     without any error.
-open_warp_launch_config() {
-  local name="$1" cwd="$2"; shift 2
+open_warp_session() {
+  local name="$1"; shift
   local dir="$HOME/.warp/launch_configurations"
   local file="$dir/${name}.yaml"
 
   if "$DRY_RUN"; then
-    printf '[dry-run] write %s (%d tab(s)) ; open warp://launch/%s\n' "$file" "$#" "$name"
-    local c
-    for c in "$@"; do printf '[dry-run]   tab: %s\n' "$c"; done
+    printf '[dry-run] write %s ; open warp://launch/%s\n' "$file" "$name"
+    printf '%s\n' "$@" | while IFS=$'\t' read -r n c cmd; do
+      printf '[dry-run]   tab %-14s cwd=%s  cmd=%s\n' "$n" "$c" "$cmd"
+    done
     return 0
   fi
 
   mkdir -p "$dir"
   # Emitted by python3 (already a dependency) because these commands contain
   # &&, $ and quotes — hand-rolled YAML quoting is how you get a config Warp
-  # silently refuses to load. JSON is valid YAML, so json.dump is safe here.
-  python3 -c '
+  # silently refuses to load. JSON is valid YAML, so json.dump is safe.
+  printf '%s\n' "$@" | python3 -c '
 import json, sys
-name, cwd = sys.argv[1], sys.argv[2]
-tabs = [{"title": c.split("&&")[-1].strip()[:24] or "tab",
-         "layout": {"cwd": cwd, "commands": [{"exec": c}]}}
-        for c in sys.argv[3:]]
+name = sys.argv[1]
+tabs = []
+for line in sys.stdin.read().splitlines():
+    if not line.strip():
+        continue
+    tab_name, cwd, cmd = line.split("\t", 2)
+    tabs.append({"title": tab_name,
+                 "layout": {"cwd": cwd, "commands": [{"exec": cmd}]}})
 print(json.dumps({"name": name, "windows": [{"tabs": tabs}]}, indent=2))
-' "$name" "$cwd" "$@" > "$file" || { warn "Could not write the Warp launch config."; return 1; }
+' "$name" > "$file" || { warn "Could not write the Warp launch config."; return 1; }
 
   vlog "Wrote Warp launch config: $file"
   open "warp://launch/${name}"
 }
 
-# Open terminal tabs for every command in POST_CREATE_TERMINALS. $1 and $2 are
-# the frontend and backend worktree paths (substituted for $WT_FRONTEND /
-# $WT_BACKEND in each command).
+# Open the session's terminals. $1/$2 are the frontend and backend worktrees,
+# the rest are the served app keys.
 auto_open_terminals() {
-  local wt_fe="$1" wt_be="$2"
-  [[ ${#POST_CREATE_TERMINALS[@]} -gt 0 ]] || return 0
-
-  local cmd
-  local -a cmds=()
-  for cmd in "${POST_CREATE_TERMINALS[@]}"; do
-    cmd="${cmd//\$WT_FRONTEND/$wt_fe}"
-    cmd="${cmd//\$WT_BACKEND/$wt_be}"
-    vlog "Terminal command: $cmd"
-    cmds+=("$cmd")
-  done
+  local wt_fe="$1" wt_be="$2"; shift 2
+  local -a apps=("$@")
+  local -a tabs=()
+  local line
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && tabs+=("$line")
+  done <<TABS
+$(session_tabs "$wt_fe" "$wt_be" ${apps[@]+"${apps[@]}"})
+TABS
+  [[ ${#tabs[@]} -gt 0 ]] || return 0
 
   case "$TERMINAL_APP" in
     warp)
       # Named after the workspace so re-creating it overwrites its own config
       # instead of littering ~/.warp/launch_configurations.
-      local session_dir; session_dir="$(dirname "$wt_fe")"
-      open_warp_launch_config "ws-$(basename "$session_dir")" "$session_dir" "${cmds[@]}"
+      open_warp_session "ws-$(basename "$(dirname "$wt_fe")")" "${tabs[@]}"
       ;;
     *)
-      for cmd in "${cmds[@]}"; do open_terminal_window "$cmd"; done
+      local n c cmd
+      for line in "${tabs[@]}"; do
+        IFS=$'\t' read -r n c cmd <<<"$line"
+        open_terminal_window "cd ${c} && ${cmd}"
+      done
       ;;
   esac
 }
 
-# Whether `ws create` should open POST_CREATE_TERMINALS at all. An all-VS-Code
-# workspace already starts the same commands from its .code-workspace tasks
-# block — running both would start every dev server twice and collide on ports.
+# Decide whether `ws create` should open the session terminals at all. Two
+# mechanisms already claim that job in other configurations, and running two of
+# them means two copies of every dev server fighting over the same port:
+#   - all-VS-Code workspaces start theirs from the .code-workspace tasks block
+#   - cmux starts its tabs from `ws serve`, after dependencies are installed
 auto_open_terminals_if_needed() {
-  local wt_fe="$1" wt_be="$2"
+  local wt_fe="$1" wt_be="$2"; shift 2
+  if [[ "$TERMINAL_APP" == "cmux" ]]; then
+    vlog "Terminals handled by the cmux session from ws serve."
+    return 0
+  fi
   [[ "$FRONTEND_IDE" == "vscode" && "$BACKEND_IDE" == "vscode" ]] && return 0
-  auto_open_terminals "$wt_fe" "$wt_be"
+  auto_open_terminals "$wt_fe" "$wt_be" "$@"
+}
+
+# ------------------------------- cmux sessions -------------------------------
+# With TERMINAL_APP=cmux each `ws` workspace becomes a cmux workspace GROUP —
+# a collapsible sidebar section — with one tab per concern, instead of N
+# detached Warp windows:
+#
+#   ▾ cu-1234            <- group anchor, named after the slug
+#     admin              <- yarn serve-admin
+#     shop               <- yarn serve-shop
+#     bookings-api       <- php artisan horizon (CMUX_BACKEND_CMDS)
+#     agent (api)        <- CMUX_AGENT_CMD in the backend worktree
+#     agent (ui)         <- CMUX_AGENT_CMD in the frontend worktree, focused
+#
+# Tabs rather than panes in one workspace: each gets a full-height terminal and
+# its own sidebar row, so a server that needs attention is visible without
+# hunting through splits.
+#
+# Two things fall out of driving this from `ws serve`: the tabs start only
+# after dependencies are installed (Warp windows fire immediately and race the
+# install — the same race the VS Code `dependsOn` block works around), and
+# `ws remove` can close the whole group before the worktrees are pulled out
+# from under it.
+#
+# A group is owned by an "anchor" workspace whose sidebar row IS the group
+# header, so creating a group always adds one workspace beyond the tabs below.
+
+# True if the cmux app is up and answering on its socket. `workspace create`
+# needs a window to create into, and unlike `cmux <path>` it will not launch
+# the app itself — so a cold machine has to be woken first.
+_cmux_running() { cmux ping >/dev/null 2>&1; }
+
+# A running cmux still refuses the socket unless socketControlMode allows
+# outside callers — and `ws` is always an outside caller. That failure is
+# indistinguishable from "not started" through the exit code alone, so match
+# the message and say which one it is; the two fixes are nothing alike.
+_cmux_denied() {
+  cmux ping 2>&1 | grep -q 'Access denied'
+}
+
+_cmux_ensure_running() {
+  _cmux_running && return 0
+  if _cmux_denied; then
+    err "cmux refused the connection: socket control is limited to processes started inside cmux."
+    err "Set automation.socketControlMode in ~/.config/cmux/cmux.json (\"password\" or \"allowAll\"), then restart cmux."
+    return 1
+  fi
+
+  vlog "cmux is not running — launching it."
+  open -a cmux >/dev/null 2>&1 || { err "Could not launch cmux."; return 1; }
+  # Poll rather than sleep a fixed amount: cold start is usually well under a
+  # second, but a first launch after an update can take several.
+  local i
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    _cmux_running && return 0
+    sleep 1
+  done
+  # Distinguish again: the app may have come up but still be refusing us.
+  if _cmux_denied; then
+    err "cmux started but refused the connection — see automation.socketControlMode in ~/.config/cmux/cmux.json."
+  else
+    err "cmux did not come up within 10s."
+  fi
+  return 1
+}
+
+# Emit the layout JSON for a tab whose commands should share one workspace as
+# stacked panes. Used for the backend tab when CMUX_BACKEND_CMDS has more than
+# one entry; a single command needs no layout at all.
+# Built in python3 (already a dependency — see the warp URL encoding above and
+# the favicon generator) because hand-rolling JSON escaping for paths and
+# commands in bash is how you get a workspace that silently fails to open.
+_cmux_layout_json() {
+  python3 -c '
+import json, sys
+cwd = sys.argv[1]
+
+def pane(name, cmd):
+    return {"pane": {"surfaces": [{"type": "terminal", "name": name,
+                                   "cwd": cwd, "command": cmd}]}}
+
+# A cmux split takes EXACTLY two children, so a column of N panes is a
+# right-leaning chain of N-1 splits.
+nodes = [pane("p%d" % (i + 1), c) for i, c in enumerate(sys.argv[2:])]
+node = nodes[-1]
+for n in reversed(nodes[:-1]):
+    node = {"direction": "vertical", "split": 0.5, "children": [n, node]}
+print(json.dumps(node))
+' "$@"
+}
+
+# Print the ref of the workspace group named $1, or nothing.
+_cmux_group_ref() {
+  cmux workspace-group list --json 2>/dev/null | python3 -c '
+import json, sys
+want = sys.argv[1]
+try:
+    for g in json.load(sys.stdin).get("groups", []):
+        if g.get("name") == want:
+            print(g.get("ref", ""))
+            break
+except Exception:
+    pass
+' "$1"
+}
+
+# Create one tab. Echoes its workspace ref.
+#   $1 title, $2 cwd, $3 group ref ("" for none), $4 focus (true|false),
+#   rest: one or more commands (>1 becomes stacked panes).
+_cmux_create_tab() {
+  local title="$1" cwd="$2" group="$3" focus="$4"; shift 4
+  local -a args=(workspace create --name "$title" --cwd "$cwd" --focus "$focus" --json)
+  [[ -n "$group" ]] && args+=(--group "$group" --group-placement end)
+
+  if [[ $# -gt 1 ]]; then
+    args+=(--layout "$(_cmux_layout_json "$cwd" "$@")")
+  else
+    # --command is silently ignored when --layout is present, so only one of
+    # the two may ever be passed.
+    args+=(--command "$1")
+  fi
+
+  cmux "${args[@]}" 2>/dev/null | python3 -c '
+import json, sys
+try:
+    print(json.load(sys.stdin).get("workspace_ref", ""))
+except Exception:
+    pass
+'
+}
+
+# Create the group and its tabs.
+#   $1 name (the slug), $2 host, $3 session dir, $4 frontend wt, $5 backend wt,
+#   rest: served app keys.
+# Returns non-zero on failure but never exits: routing and dependencies are
+# already in place by this point, so a missing cmux should degrade to "start
+# them yourself", not abort the serve.
+start_cmux_session() {
+  local name="$1" host="$2" session_dir="$3" fe="$4" be="$5"; shift 5
+  local -a apps=("$@")
+
+  # One shared definition of the tab set (see session_tabs); cmux renders it as
+  # a workspace group, warp as a launch config.
+  local -a tabs=()
+  local line
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && tabs+=("$line")
+  done <<TABS
+$(session_tabs "$fe" "$be" ${apps[@]+"${apps[@]}"})
+TABS
+
+  if "$DRY_RUN"; then
+    printf '[dry-run] cmux group %s with %d tabs:\n' "$name" "${#tabs[@]}"
+    local n c cmd
+    for line in ${tabs[@]+"${tabs[@]}"}; do
+      IFS=$'\t' read -r n c cmd <<<"$line"
+      printf '[dry-run]   tab %-14s cwd=%s  cmd=%s\n' "$n" "$c" "$cmd"
+    done
+    return 0
+  fi
+
+  command -v cmux >/dev/null 2>&1 || {
+    warn "cmux not found — install it or set TERMINAL_APP to 'warp'/'terminal'."
+    return 1
+  }
+  _cmux_ensure_running || return 1
+
+  # Idempotent, like every other step in `ws serve`: re-serving an already open
+  # workspace must not stack a second copy of every dev server.
+  if [[ -n "$(_cmux_group_ref "$name")" ]]; then
+    vlog "cmux group '$name' already exists — leaving it alone."
+    return 0
+  fi
+
+  [[ ${#tabs[@]} -gt 0 ]] || { warn "No session tabs defined."; return 1; }
+
+  # The first tab has to exist before the group can be anchored to it, so
+  # create it ungrouped and adopt it in the next step.
+  local first_ref n c cmd
+  IFS=$'\t' read -r n c cmd <<<"${tabs[0]}"
+  first_ref="$(_cmux_create_tab "$n" "$c" "" false "$cmd")"
+  [[ -n "$first_ref" ]] || { err "cmux did not return a workspace ref."; return 1; }
+
+  # --from is mandatory: left off, cmux adopts whatever is selected in the
+  # sidebar, which would drag an unrelated workspace into this group.
+  local group_ref
+  group_ref="$(cmux workspace-group create --name "$name" --from "$first_ref" --json 2>/dev/null | python3 -c '
+import json, sys
+try:
+    print(json.load(sys.stdin).get("group", {}).get("ref", ""))
+except Exception:
+    pass
+')"
+  [[ -n "$group_ref" ]] || { err "Could not create the cmux group '$name'."; return 1; }
+
+  # The anchor is created by the group and shows as its header row; title it
+  # after the workspace so the sidebar reads as the slug, not "Group N".
+  local anchor
+  anchor="$(cmux workspace-group list --json 2>/dev/null | python3 -c '
+import json, sys
+want = sys.argv[1]
+try:
+    for g in json.load(sys.stdin).get("groups", []):
+        if g.get("name") == want:
+            print(g.get("anchor_workspace_ref", ""))
+            break
+except Exception:
+    pass
+' "$name")"
+  [[ -n "$anchor" ]] && run_quiet cmux workspace rename "$anchor" --title "$name" || true
+
+  # Quoted slice, guarded by an explicit length check: each element is a whole
+  # NAME<TAB>CWD<TAB>COMMAND line, so an unquoted expansion word-splits it into
+  # one bogus tab per word. The length check is what keeps bash 3.2 + set -u
+  # from tripping over an empty slice.
+  local -a rest=()
+  [[ ${#tabs[@]} -gt 1 ]] && rest=("${tabs[@]:1}")
+  local i=0 last=$(( ${#rest[@]} - 1 )) focus
+  for line in ${rest[@]+"${rest[@]}"}; do
+    IFS=$'\t' read -r n c cmd <<<"$line"
+    # Focus the final tab — session_tabs puts "agent (ui)" last, and that is
+    # the one you actually start working in.
+    [[ $i -eq $last ]] && focus=true || focus=false
+    _cmux_create_tab "$n" "$c" "$group_ref" "$focus" "$cmd" >/dev/null
+    i=$(( i + 1 ))
+  done
+}
+
+# Close the group named $1 and every tab in it. Idempotent, and silent when
+# cmux is not running — `ws remove` must work where cmux was never used.
+close_cmux_session() {
+  local name="$1"
+  command -v cmux >/dev/null 2>&1 || return 0
+  _cmux_running || return 0
+
+  local group; group="$(_cmux_group_ref "$name")"
+  [[ -n "$group" ]] || { vlog "No cmux group named '$name'."; return 0; }
+
+  if "$DRY_RUN"; then
+    printf '[dry-run] cmux workspace-group delete %s\n' "$group"
+    return 0
+  fi
+  # delete closes every member; ungroup would only dissolve the section and
+  # leave four orphaned tabs with servers still holding the worktree open.
+  vlog "Closing cmux group $group ($name)."
+  run_quiet cmux workspace-group delete "$group" || warn "Could not close the cmux group."
 }
 
 # ------------------------------- IDE launchers -------------------------------

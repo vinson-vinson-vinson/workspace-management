@@ -144,6 +144,8 @@ confirm_removal() {
   # Never behind -v: a destructive prompt must state what it destroys.
   log "About to remove workspace: $slug"
   log "This will:"
+  [[ "$TERMINAL_APP" == "cmux" ]] && \
+    printf '  - Close the cmux session and its dev servers, if any\n'
   printf '  - Revert serve routing (remove nginx block + reload), if any\n'
   printf '  - Remove git worktrees (frontend + backend)\n'
   printf '  - Delete local branches\n'
@@ -268,6 +270,10 @@ cmd_remove() {
   confirm_removal "$slug"
 
   vlog "Removing workspace..."
+
+  # Before anything else: the panes hold dev servers with open file handles
+  # inside the worktrees, and `git worktree remove` fails while they are alive.
+  close_cmux_session "$slug"
 
   revert_serve_setup "$slug"
 

@@ -9,6 +9,11 @@ when a release is tagged.
 
 ## [Unreleased]
 
+### Fixed
+- `ws list`: long branch names in the MAIN row are elided like workspace
+  slugs already were (each branch individually when the repos disagree), so
+  they can't stretch the WORKSPACE column and push SERVE URL off-screen.
+
 ## [2.2.0] — 2026-07-20
 
 ### Added

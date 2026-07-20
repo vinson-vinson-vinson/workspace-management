@@ -61,16 +61,39 @@ _ws_repo_branch() {
   git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true
 }
 
+# Column budget for names in the table. Anything longer is elided, so one long
+# branch name can't stretch the WORKSPACE column and wreck the alignment.
+_WS_NAME_CAP=50         # workspace slug, and the MAIN label when both repos agree
+_WS_MAIN_SPLIT_CAP=30   # each branch when the two repos are on different branches
+
+# Echo $1 shortened to at most $2 display chars, marking the elision.
+_ws_trunc() {
+  local s="$1" cap="$2"
+  if (( ${#s} <= cap )); then
+    printf '%s' "$s"
+  elif "$WS_UTF8"; then
+    printf '%s…' "${s:0:cap-1}"
+  else
+    # Byte-oriented locale: ${#} counts bytes, so use a 3-char ASCII marker
+    # rather than risk slicing a multibyte glyph in half.
+    printf '%s...' "${s:0:cap-3}"
+  fi
+}
+
 # Branch label for the main workspace: one branch if both repos agree, else both
-# labeled. Empty if neither repo resolves.
+# labeled. Empty if neither repo resolves. Branch names are elided — a long one
+# (or two) would otherwise blow the WORKSPACE column out past 140 chars.
 _ws_main_label() {
   local fe be
   fe="$(_ws_repo_branch "$FRONTEND_REPO")"
   be="$(_ws_repo_branch "$BACKEND_REPO")"
   if [[ -n "$fe" && "$fe" == "$be" ]]; then
-    printf '%s' "$fe"
+    _ws_trunc "$fe" "$_WS_NAME_CAP"
   elif [[ -n "$fe" || -n "$be" ]]; then
-    printf '%s:%s %s:%s' "$FRONTEND_DIR_NAME" "${fe:-?}" "$BACKEND_DIR_NAME" "${be:-?}"
+    # Two branches share the row, so each gets the tighter cap.
+    printf '%s:%s %s:%s' \
+      "$FRONTEND_DIR_NAME" "$(_ws_trunc "${fe:-?}" "$_WS_MAIN_SPLIT_CAP")" \
+      "$BACKEND_DIR_NAME"  "$(_ws_trunc "${be:-?}" "$_WS_MAIN_SPLIT_CAP")"
   fi
 }
 
@@ -144,7 +167,6 @@ cmd_list() {
   # Parallel arrays: *_plain carries the width math (ANSI + OSC 8 escapes are
   # zero display width but inflate ${#}), the styled twin is what's printed.
   local -a r_key=() r_idx=() r_ws_plain=() r_ws=() r_url_plain=() r_url=()
-  local name_cap=50
 
   # MAIN first — index 0 (`ws open 0`), identified by a MAIN tag (not a
   # swatch), always served. Its name links to MAIN_WORKSPACE_FILE when set.
@@ -164,8 +186,7 @@ cmd_list() {
   for slug in ${slugs[@]+"${slugs[@]}"}; do
     n=$((n + 1))
     r_key+=("$slug"); r_idx+=("$n")
-    name="$slug"
-    (( ${#name} > name_cap )) && name="${name:0:name_cap-1}…"
+    name="$(_ws_trunc "$slug" "$_WS_NAME_CAP")"
     sw="$(_ws_swatch "$(_ws_color "$slug")")"
     [[ -n "$sw" ]] || sw="${C_DIM}●${C_RESET}"
     r_ws_plain+=("● ${name}")

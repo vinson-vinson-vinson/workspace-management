@@ -142,6 +142,23 @@ open_workspace() {
     "$workspace_file" "$session_dir" "$branch_slug"
 }
 
+# The .code-workspace auto-serve tasks only ever fire in VS Code, so with any
+# other IDE configured `ws create` finished with an unserved workspace and no
+# indication why. Run `ws serve` directly in that case, to match the zero-step
+# VS Code flow. Idempotent: safe on an already-served workspace.
+auto_serve_if_needed() {
+  if ! "$AUTO_SERVE"; then
+    vlog "Neanderthal mode — skipping auto-serve."
+    return 0
+  fi
+  # VS Code handles serve + dev servers via .code-workspace tasks.
+  [[ "$FRONTEND_IDE" == "vscode" && "$BACKEND_IDE" == "vscode" ]] && return 0
+  # `|| true`: a failed serve must not abort create — the worktrees exist and
+  # are usable, and serve prints its own diagnosis.
+  log "Serving workspace…"
+  WSM_HOME="$WSM_HOME" "$WSM_HOME/workspaces" serve "$branch_slug" || true
+}
+
 # Pick a legible title-bar foreground ("dark"/"light") for a "#rrggbb" bg using
 # the W3C relative-luminance threshold.
 contrast_foreground() {
@@ -405,6 +422,8 @@ cmd_create() {
       fi
       sync_scm_ignores
       open_workspace "$workspace_file"
+      auto_serve_if_needed
+      auto_open_terminals_if_needed "$frontend_worktree" "$backend_worktree"
       exit 0
     fi
     err "Both worktree paths exist, but at least one is not registered as git worktree. Refusing."
@@ -458,6 +477,8 @@ cmd_create() {
   sync_scm_ignores
   # Checked last, once it has actually happened — not announced in advance.
   open_workspace "$workspace_file"
+  auto_serve_if_needed
+  auto_open_terminals_if_needed "$frontend_worktree" "$backend_worktree"
 
   trap - EXIT
 }

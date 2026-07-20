@@ -9,6 +9,22 @@ when a release is tagged.
 
 ## [Unreleased]
 
+### Added
+- `ws create` now serves the workspace for non-VS-Code setups. The
+  `.code-workspace` tasks block only ever fires in VS Code, so since IDEs became
+  configurable in 2.1.0 a Zed/PhpStorm user finished `ws create` with an
+  unserved workspace and nothing saying why. `ws create` now runs `ws serve`
+  itself when either IDE isn't vscode, matching the zero-step VS Code flow.
+  `--neanderthal` still skips it, and an all-VS-Code workspace is untouched.
+- `POST_CREATE_TERMINALS` config (default empty): commands auto-started in
+  their own terminal tabs after `ws create` — the non-VS-Code counterpart to
+  the tasks block, e.g. `yarn serve-<app>` per app plus an agent.
+  `$WT_FRONTEND` / `$WT_BACKEND` are substituted with the session worktree
+  paths at runtime. The new `TERMINAL_APP` setting picks the terminal:
+  `terminal` (default, via `osascript`) or `warp` (via its URL scheme). Skipped
+  entirely for all-VS-Code workspaces, which would otherwise start every dev
+  server twice and collide on ports.
+
 ## [2.1.1] — 2026-07-20
 
 ### Fixed

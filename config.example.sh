@@ -80,6 +80,24 @@ EXTRA_WORKSPACE_FOLDERS=(
   # "$HOME/Projects/packages/laravel-integrations"
 )
 
+# ------------------------- post-create terminals -----------------------------
+# Only used when FRONTEND_IDE/BACKEND_IDE aren't both vscode: a VS Code
+# workspace starts these same commands from its .code-workspace tasks block,
+# and running both would start every dev server twice.
+
+# Terminal app used for auto-opening command tabs after `ws create`:
+# "terminal" (default) or "warp". Optional.
+TERMINAL_APP="terminal"
+
+# Commands auto-started in terminal tabs after `ws create` finishes, one tab
+# each. $WT_FRONTEND and $WT_BACKEND are substituted with the session worktree
+# paths at runtime, so each command has to cd itself. Leave the array empty to
+# skip. Optional; defaults to empty.
+POST_CREATE_TERMINALS=(
+  # "cd $WT_FRONTEND && yarn serve-admin"
+  # "cd $WT_BACKEND && claude"
+)
+
 # ------------------------------ serving (ws serve) ---------------------------
 # `ws serve` makes a task worktree reachable at <sub>.$BASE_DOMAIN using Laravel
 # Valet's nginx + wildcard cert. If you don't use `ws serve` you can leave this

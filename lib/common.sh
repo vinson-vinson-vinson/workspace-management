@@ -259,6 +259,60 @@ load_config() {
   # Array default, bash-3.2/set -u safe: keeps an unset EXTRA_WORKSPACE_FOLDERS
   # from blowing up expansion in configs predating the setting.
   EXTRA_WORKSPACE_FOLDERS=(${EXTRA_WORKSPACE_FOLDERS[@]+"${EXTRA_WORKSPACE_FOLDERS[@]}"})
+  # Terminal opened for post-create commands (e.g. yarn serve-*, an agent).
+  TERMINAL_APP="${TERMINAL_APP:-terminal}"
+  # Commands auto-started in terminal tabs after ws create. $WT_FRONTEND and
+  # $WT_BACKEND are substituted at runtime. Same +"" guard as above.
+  POST_CREATE_TERMINALS=(${POST_CREATE_TERMINALS[@]+"${POST_CREATE_TERMINALS[@]}"})
+}
+
+# --------------------------- post-create terminals --------------------------
+# Open a new terminal tab/window running COMMAND. Dispatches on TERMINAL_APP
+# from config.sh ("terminal" default; "warp" also supported).
+open_terminal_window() {
+  local cmd="$1"
+  if "$DRY_RUN"; then
+    printf '[dry-run] open %s terminal: %s\n' "$TERMINAL_APP" "$cmd"
+    return 0
+  fi
+  case "$TERMINAL_APP" in
+    warp)
+      # Warp has no CLI; the URL scheme is the only documented way in. The
+      # command has to be percent-encoded whole — semicolons delimit multiple
+      # commands and would otherwise split it.
+      local encoded
+      encoded="$(printf '%s' "$cmd" | python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read(), safe=""))')"
+      open "warp://launch?cmd=${encoded}"
+      ;;
+    *)
+      # Terminal.app: do script opens a new tab running the command.
+      osascript -e "tell application \"Terminal\" to do script \"$cmd\""
+      ;;
+  esac
+}
+
+# Open terminal windows for every command in POST_CREATE_TERMINALS. $1 and $2
+# are the frontend and backend worktree paths (substituted for $WT_FRONTEND /
+# $WT_BACKEND in each command).
+auto_open_terminals() {
+  local wt_fe="$1" wt_be="$2"
+  [[ ${#POST_CREATE_TERMINALS[@]} -gt 0 ]] || return 0
+  local cmd
+  for cmd in "${POST_CREATE_TERMINALS[@]}"; do
+    cmd="${cmd//\$WT_FRONTEND/$wt_fe}"
+    cmd="${cmd//\$WT_BACKEND/$wt_be}"
+    vlog "Opening terminal: $cmd"
+    open_terminal_window "$cmd"
+  done
+}
+
+# Whether `ws create` should open POST_CREATE_TERMINALS at all. An all-VS-Code
+# workspace already starts the same commands from its .code-workspace tasks
+# block — running both would start every dev server twice and collide on ports.
+auto_open_terminals_if_needed() {
+  local wt_fe="$1" wt_be="$2"
+  [[ "$FRONTEND_IDE" == "vscode" && "$BACKEND_IDE" == "vscode" ]] && return 0
+  auto_open_terminals "$wt_fe" "$wt_be"
 }
 
 # ------------------------------- IDE launchers -------------------------------

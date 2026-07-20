@@ -9,6 +9,8 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.4.0] — 2026-07-20
+
 ### Changed
 - Test-DB provisioning got proper spinner/check steps: `ws create` shows
   "✓ test DB ready (<name>)", `ws remove` shows "✓ test DB dropped (<name>)".
@@ -271,7 +273,8 @@ the identity change.
   own `<sub>.anny.dev` subdomain via Laravel Valet/nginx, Cognitor key
   seeding, `install.sh`, and Homebrew tap packaging.
 
-[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.4.0...HEAD
+[2.4.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.2.1...v2.3.0
 [2.2.1]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.1.1...v2.2.0

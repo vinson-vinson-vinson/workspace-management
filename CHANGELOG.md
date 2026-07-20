@@ -9,6 +9,8 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.1.1] — 2026-07-20
+
 ### Fixed
 - `ws serve`: re-pin `HOST`/`PORT` in an app's `.env` even when the file already
   exists. The "keep the existing env" guard returned before the port rewrite, so
@@ -200,7 +202,8 @@ the identity change.
   own `<sub>.anny.dev` subdomain via Laravel Valet/nginx, Cognitor key
   seeding, `install.sh`, and Homebrew tap packaging.
 
-[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.1.1...HEAD
+[2.1.1]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v1.7.0...v2.0.0
 [1.7.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v1.6.0...v1.7.0

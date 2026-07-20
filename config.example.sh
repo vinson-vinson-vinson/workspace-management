@@ -94,20 +94,53 @@ EXTRA_WORKSPACE_FOLDERS=(
 # workspace starts these same commands from its .code-workspace tasks block,
 # and running both would start every dev server twice.
 
-# Terminal app used for auto-opening command tabs after `ws create`:
-# "terminal" (default) or "warp". Optional.
+# Terminal app used for the workspace's terminals: "terminal" (default) or
+# "warp". Optional.
+#
+# Both render the SAME set of tabs, derived from the served apps:
+#
+#   admin          yarn serve-admin        (frontend worktree)
+#   shop           yarn serve-shop         (frontend worktree)
+#   bookings-api   SESSION_BACKEND_CMDS    (backend worktree)
+#   agent (api)    SESSION_AGENT_CMD       (backend worktree)
+#   agent (ui)     SESSION_AGENT_CMD       (frontend worktree)
+#
+# One agent per repo, not per workspace: an agent inherits the AGENTS.md and
+# branch conventions of the directory it starts in, and the repos differ.
+#
+# What differs is the container:
+#   terminal  one tab per command in Terminal.app
+#   warp      ONE window holding the tabs, via a generated launch configuration
+#             (Warp has no CLI and its URI scheme can't carry a command)
+#
+# Warp does have tab groups, but only as a UI gesture — a launch configuration
+# cannot declare one yet (warpdotdev/warp#13898; the patch adding
+# `tab_groups:`/`group:` is open in warp#13937). Once that ships, each
+# workspace's tabs can become a named collapsible group.
 TERMINAL_APP="terminal"
 
-# Commands auto-started in terminal tabs after `ws create` finishes, one tab
-# each. $WT_FRONTEND and $WT_BACKEND are substituted with the session worktree
-# paths at runtime, so each command has to cd itself. Leave the array empty to
-# skip. Optional; defaults to empty.
+# Overrides the derived tab set above with your own commands, one tab each.
+# $WT_FRONTEND and $WT_BACKEND are substituted with the session worktree paths
+# at runtime, so each command has to cd itself. Leave the array empty to use
+# the derived set. Optional; defaults to empty.
 # SINGLE quotes are load-bearing: the literal string $WT_FRONTEND must survive
 # into the array. Double-quoted, the shell expands it while sourcing this file
 # — where it is unset — and every `ws` command dies with "unbound variable".
 POST_CREATE_TERMINALS=(
   # 'cd $WT_FRONTEND && yarn serve-admin'
   # 'cd $WT_BACKEND && claude'
+)
+
+# Command run in the two agent tabs — one per repo.
+# Optional; defaults to "claude".
+SESSION_AGENT_CMD="claude"
+
+# Backend tabs beside the agent (queue workers, schedulers). The frontend tabs
+# are derived from the served apps, so only the backend needs listing.
+# Optional; defaults to ("php artisan horizon").
+SESSION_BACKEND_CMDS=(
+  # "php artisan horizon"
+  # "php artisan schedule:work"
 )
 
 # ------------------------ per-workspace test database ------------------------

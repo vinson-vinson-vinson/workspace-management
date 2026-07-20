@@ -273,6 +273,54 @@ load_config() {
   # Commands auto-started in terminal tabs after ws create. $WT_FRONTEND and
   # $WT_BACKEND are substituted at runtime. Same +"" guard as above.
   POST_CREATE_TERMINALS=(${POST_CREATE_TERMINALS[@]+"${POST_CREATE_TERMINALS[@]}"})
+  # Agent started in each repo's agent tab. One per repo, not one per
+  # workspace: an agent inherits the CLAUDE.md and branch conventions of the
+  # directory it starts in, and the two repos differ on both.
+  SESSION_AGENT_CMD="${SESSION_AGENT_CMD:-claude}"
+  # Backend tabs beside the agent (queue workers, schedulers). The frontend
+  # tabs are derived from the served apps, so only the backend needs listing.
+  SESSION_BACKEND_CMDS=(${SESSION_BACKEND_CMDS[@]+"${SESSION_BACKEND_CMDS[@]}"})
+  [[ ${#SESSION_BACKEND_CMDS[@]} -gt 0 ]] \
+    || SESSION_BACKEND_CMDS=('php artisan horizon')
+}
+
+# ------------------------------ session tabs --------------------------------
+# ONE definition of what a workspace's terminals are, rendered by whichever
+# terminal is configured. Without this each backend grew its own idea of the
+# tab set and they drifted apart.
+#
+#   admin / shop     one per served app   -> yarn serve-<app>   (frontend wt)
+#   bookings-api     SESSION_BACKEND_CMDS -> e.g. artisan horizon (backend wt)
+#   agent (api)      SESSION_AGENT_CMD                          (backend wt)
+#   agent (ui)       SESSION_AGENT_CMD                          (frontend wt)
+#
+# Emits one tab per line as NAME<TAB>CWD<TAB>COMMAND. Tab-separated because the
+# commands contain spaces, quotes and && — anything else needs quoting rules.
+# POST_CREATE_TERMINALS, when set, replaces the derived set entirely: it is the
+# escape hatch for a layout this doesn't cover.
+session_tabs() {
+  local fe="$1" be="$2"; shift 2
+  local -a apps=("$@")
+  local app cmd
+
+  if [[ ${#POST_CREATE_TERMINALS[@]} -gt 0 ]]; then
+    for cmd in "${POST_CREATE_TERMINALS[@]}"; do
+      cmd="${cmd//\$WT_FRONTEND/$fe}"
+      cmd="${cmd//\$WT_BACKEND/$be}"
+      # Name the tab after the tail of the command ("… && yarn serve-admin").
+      printf '%s\t%s\t%s\n' "${cmd##*&& }" "$(dirname "$fe")" "$cmd"
+    done
+    return 0
+  fi
+
+  for app in ${apps[@]+"${apps[@]}"}; do
+    printf '%s\t%s\t%s\n' "$app" "$fe" "yarn serve-$app"
+  done
+  for cmd in "${SESSION_BACKEND_CMDS[@]}"; do
+    printf '%s\t%s\t%s\n' "$(basename "$be")" "$be" "$cmd"
+  done
+  printf '%s\t%s\t%s\n' "agent (api)" "$be" "$SESSION_AGENT_CMD"
+  printf '%s\t%s\t%s\n' "agent (ui)"  "$fe" "$SESSION_AGENT_CMD"
 }
 
 # --------------------------- post-create terminals --------------------------
@@ -286,84 +334,96 @@ open_terminal_window() {
   osascript -e "tell application \"Terminal\" to do script \"$cmd\""
 }
 
-# Warp: one launch configuration holding every command as its own tab, opened
-# via warp://launch/<name>.
+# Warp: one launch configuration holding every tab, opened via
+# warp://launch/<name>.
 #
-# Warp has no CLI, and its URL scheme cannot carry a command — `warp://action/
-# new_tab?path=` only sets a directory. A launch configuration is the one
-# documented way to start a tab that runs something. It is also nicer than the
-# alternative: one window of N tabs rather than N scattered windows.
+# Warp has no CLI, and its URL scheme cannot carry a command — warp://action/
+# new_tab?path= only sets a directory, and warp://launch?cmd= is not a scheme
+# at all (open exits 0 because a warp:// handler exists, so it fails silently).
+# A launch configuration is the one documented way to start a tab that runs
+# something. Warp does have tab groups, but only as a UI gesture: the launch
+# configuration schema carries no group list or per-tab membership (warp#13898,
+# which Warp triaged as a real gap; the patch adding `tab_groups:`/`group:` is
+# still unmerged in warp#13937). Warp is not AppleScript-able either. So the
+# ceiling here is one window holding the tabs — revisit if that PR lands.
 #
-# Two constraints that fail SILENTLY if broken, hence the care here:
+# Two constraints that fail SILENTLY if broken:
 #   - warp://launch/ resolves a NAME inside ~/.warp/launch_configurations, not
 #     a path, so the file has to be written there first.
 #   - cwd must be absolute; a tilde or relative path makes Warp skip the config
 #     without any error.
-open_warp_launch_config() {
-  local name="$1" cwd="$2"; shift 2
+open_warp_session() {
+  local name="$1"; shift
   local dir="$HOME/.warp/launch_configurations"
   local file="$dir/${name}.yaml"
 
   if "$DRY_RUN"; then
-    printf '[dry-run] write %s (%d tab(s)) ; open warp://launch/%s\n' "$file" "$#" "$name"
-    local c
-    for c in "$@"; do printf '[dry-run]   tab: %s\n' "$c"; done
+    printf '[dry-run] write %s ; open warp://launch/%s\n' "$file" "$name"
+    printf '%s\n' "$@" | while IFS=$'\t' read -r n c cmd; do
+      printf '[dry-run]   tab %-14s cwd=%s  cmd=%s\n' "$n" "$c" "$cmd"
+    done
     return 0
   fi
 
   mkdir -p "$dir"
   # Emitted by python3 (already a dependency) because these commands contain
   # &&, $ and quotes — hand-rolled YAML quoting is how you get a config Warp
-  # silently refuses to load. JSON is valid YAML, so json.dump is safe here.
-  python3 -c '
+  # silently refuses to load. JSON is valid YAML, so json.dump is safe.
+  printf '%s\n' "$@" | python3 -c '
 import json, sys
-name, cwd = sys.argv[1], sys.argv[2]
-tabs = [{"title": c.split("&&")[-1].strip()[:24] or "tab",
-         "layout": {"cwd": cwd, "commands": [{"exec": c}]}}
-        for c in sys.argv[3:]]
+name = sys.argv[1]
+tabs = []
+for line in sys.stdin.read().splitlines():
+    if not line.strip():
+        continue
+    tab_name, cwd, cmd = line.split("\t", 2)
+    tabs.append({"title": tab_name,
+                 "layout": {"cwd": cwd, "commands": [{"exec": cmd}]}})
 print(json.dumps({"name": name, "windows": [{"tabs": tabs}]}, indent=2))
-' "$name" "$cwd" "$@" > "$file" || { warn "Could not write the Warp launch config."; return 1; }
+' "$name" > "$file" || { warn "Could not write the Warp launch config."; return 1; }
 
   vlog "Wrote Warp launch config: $file"
   open "warp://launch/${name}"
 }
 
-# Open terminal tabs for every command in POST_CREATE_TERMINALS. $1 and $2 are
-# the frontend and backend worktree paths (substituted for $WT_FRONTEND /
-# $WT_BACKEND in each command).
+# Open the session's terminals. $1/$2 are the frontend and backend worktrees,
+# the rest are the served app keys.
 auto_open_terminals() {
-  local wt_fe="$1" wt_be="$2"
-  [[ ${#POST_CREATE_TERMINALS[@]} -gt 0 ]] || return 0
-
-  local cmd
-  local -a cmds=()
-  for cmd in "${POST_CREATE_TERMINALS[@]}"; do
-    cmd="${cmd//\$WT_FRONTEND/$wt_fe}"
-    cmd="${cmd//\$WT_BACKEND/$wt_be}"
-    vlog "Terminal command: $cmd"
-    cmds+=("$cmd")
-  done
+  local wt_fe="$1" wt_be="$2"; shift 2
+  local -a apps=("$@")
+  local -a tabs=()
+  local line
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && tabs+=("$line")
+  done <<TABS
+$(session_tabs "$wt_fe" "$wt_be" ${apps[@]+"${apps[@]}"})
+TABS
+  [[ ${#tabs[@]} -gt 0 ]] || return 0
 
   case "$TERMINAL_APP" in
     warp)
       # Named after the workspace so re-creating it overwrites its own config
       # instead of littering ~/.warp/launch_configurations.
-      local session_dir; session_dir="$(dirname "$wt_fe")"
-      open_warp_launch_config "ws-$(basename "$session_dir")" "$session_dir" "${cmds[@]}"
+      open_warp_session "ws-$(basename "$(dirname "$wt_fe")")" "${tabs[@]}"
       ;;
     *)
-      for cmd in "${cmds[@]}"; do open_terminal_window "$cmd"; done
+      local n c cmd
+      for line in "${tabs[@]}"; do
+        IFS=$'\t' read -r n c cmd <<<"$line"
+        open_terminal_window "cd ${c} && ${cmd}"
+      done
       ;;
   esac
 }
 
-# Whether `ws create` should open POST_CREATE_TERMINALS at all. An all-VS-Code
-# workspace already starts the same commands from its .code-workspace tasks
-# block — running both would start every dev server twice and collide on ports.
+# Decide whether `ws create` should open the session terminals at all. Two
+# mechanisms already claim that job in other configurations, and running two of
+# them means two copies of every dev server fighting over the same port:
+#   - all-VS-Code workspaces start theirs from the .code-workspace tasks block
 auto_open_terminals_if_needed() {
-  local wt_fe="$1" wt_be="$2"
+  local wt_fe="$1" wt_be="$2"; shift 2
   [[ "$FRONTEND_IDE" == "vscode" && "$BACKEND_IDE" == "vscode" ]] && return 0
-  auto_open_terminals "$wt_fe" "$wt_be"
+  auto_open_terminals "$wt_fe" "$wt_be" "$@"
 }
 
 # ------------------------------- IDE launchers -------------------------------

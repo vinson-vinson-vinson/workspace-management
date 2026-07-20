@@ -63,6 +63,15 @@ when a release is tagged.
 ## [2.2.0] — 2026-07-20
 
 ### Added
+- One definition of the workspace's terminal tabs, shared by every terminal:
+  `admin`/`shop` (one per served app), `bookings-api` (`SESSION_BACKEND_CMDS`,
+  default `php artisan horizon`), and an agent tab per repo — `agent (api)` and
+  `agent (ui)` (`SESSION_AGENT_CMD`, default `claude`). One agent per repo
+  rather than per workspace, because an agent inherits the conventions of the
+  directory it starts in and the two repos agree on none of them.
+  `POST_CREATE_TERMINALS` now overrides that derived set instead of being the
+  only way to define it, and each tab carries its own cwd so the commands no
+  longer need a `cd` prefix.
 - `ws create` now serves the workspace for non-VS-Code setups. The
   `.code-workspace` tasks block only ever fires in VS Code, so since IDEs became
   configurable in 2.1.0 a Zed/PhpStorm user finished `ws create` with an

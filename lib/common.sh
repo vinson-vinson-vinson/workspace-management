@@ -259,6 +259,14 @@ load_config() {
   # Array default, bash-3.2/set -u safe: keeps an unset EXTRA_WORKSPACE_FOLDERS
   # from blowing up expansion in configs predating the setting.
   EXTRA_WORKSPACE_FOLDERS=(${EXTRA_WORKSPACE_FOLDERS[@]+"${EXTRA_WORKSPACE_FOLDERS[@]}"})
+  # Per-workspace test database (see cmd_test.sh); defaults keep configs
+  # predating the feature working, with the feature ON — creation is
+  # warn-and-continue, so machines without MySQL lose nothing.
+  TEST_DB_ENABLED="${TEST_DB_ENABLED:-true}"
+  TEST_DB_PREFIX="${TEST_DB_PREFIX:-anny_bookings_test}"
+  TEST_DB_HOST="${TEST_DB_HOST:-127.0.0.1}"
+  TEST_DB_USER="${TEST_DB_USER:-root}"
+  TEST_DB_PASSWORD="${TEST_DB_PASSWORD:-}"
   # Terminal opened for post-create commands (e.g. yarn serve-*, an agent).
   TERMINAL_APP="${TERMINAL_APP:-terminal}"
   # Commands auto-started in terminal tabs after ws create. $WT_FRONTEND and
@@ -654,6 +662,105 @@ ensure_sudo_for_nginx() {
   log "Requesting sudo (needed to reload nginx)…"
   log "(Run 'ws trust' once to stop these prompts for good.)"
   sudo -v
+}
+
+# --------------------------- per-workspace test DB ---------------------------
+# Every workspace gets its own MySQL test database so concurrent suite runs in
+# different workspaces can't `migrate:fresh` over each other (phpunit.xml pins
+# the SHARED anny_bookings_test, but declares DB_DATABASE without force="true",
+# so an exported shell variable wins — that's what `ws test` does). Created by
+# `ws create` / on demand by `ws test`, dropped by `ws remove`.
+
+# Echo the test-DB name for a slug: TEST_DB_PREFIX + the same short label the
+# subdomain uses (task id for task slugs), '-' mapped to '_', truncated to
+# MySQL's 64-char identifier cap. Deliberately simple — if two very long slugs
+# ever truncate to the same name, they're semantically related anyway.
+resolve_test_db() {
+  local slug="$1" label name
+  label="$(resolve_subdomain "$slug")" || return 1
+  name="${TEST_DB_PREFIX}_$(printf '%s' "$label" | tr '-' '_')"
+  name="${name:0:64}"
+  while [[ "$name" == *_ ]]; do name="${name%_}"; done
+  printf '%s' "$name"
+}
+
+# Validation gate in front of ANY test-DB DDL. Refuses everything that is not
+# unmistakably a tool-generated per-workspace test DB:
+#   - must be TEST_DB_PREFIX + "_" + non-empty suffix — the bare prefix IS the
+#     shared anny_bookings_test and must never be touched
+#   - [a-z0-9_] only, <= 64 chars
+#   - never the dev DB (read live from the backend .env), never a system schema
+_test_db_name_ok() {
+  local name="$1"
+  [[ "$name" == "${TEST_DB_PREFIX}_"?* ]] || return 1
+  [[ "$name" =~ ^[a-z0-9_]+$ ]] || return 1
+  [[ ${#name} -le 64 ]] || return 1
+  local dev_db=""
+  dev_db="$(grep -E '^DB_DATABASE=' "$BACKEND_REPO/.env" 2>/dev/null \
+    | tail -1 | cut -d= -f2- | tr -d '"'"'"' ')"
+  case "$name" in
+    "$TEST_DB_PREFIX"|mysql|information_schema|performance_schema|sys) return 1 ;;
+  esac
+  [[ -n "$dev_db" && "$name" == "$dev_db" ]] && return 1
+  return 0
+}
+
+# Run one SQL statement with the configured credentials.
+_test_db_sql() {
+  local -a args=(-h "$TEST_DB_HOST" -u "$TEST_DB_USER")
+  [[ -n "$TEST_DB_PASSWORD" ]] && args+=("-p${TEST_DB_PASSWORD}")
+  mysql "${args[@]}" -e "$1" 2>&1
+}
+
+# Ensure the workspace's test DB exists. Empty on purpose: RefreshDatabase
+# loads the schema on the first run (~35s), and a clone-from-template would
+# trade that once-off wait for a staleness failure mode that's far harder to
+# debug. Returns non-zero on failure but never exits — `ws create` must not
+# fail over an optional convenience; `ws test` checks the status and DOES fail
+# (closed) on it.
+test_db_ensure() {
+  local slug="$1" name out
+  "$TEST_DB_ENABLED" || { vlog "Per-workspace test DB disabled."; return 0; }
+  name="$(resolve_test_db "$slug")" || { warn "No test-DB name derivable from '$slug'."; return 1; }
+  if ! _test_db_name_ok "$name"; then
+    warn "Refusing to create test DB '$name' (fails the safety checks)."
+    return 1
+  fi
+  if "$DRY_RUN"; then
+    printf '[dry-run] mysql: CREATE DATABASE IF NOT EXISTS \`%s\`\n' "$name"
+    return 0
+  fi
+  command -v mysql >/dev/null 2>&1 || { warn "mysql client not found — skipping test DB."; return 1; }
+  if out="$(_test_db_sql "CREATE DATABASE IF NOT EXISTS \`$name\`")"; then
+    vlog "Test DB ready: $name"
+    return 0
+  fi
+  warn "Could not create test DB '$name': ${out:-unknown error}"
+  return 1
+}
+
+# Drop the workspace's test DB. Guarded to the teeth — see _test_db_name_ok;
+# a skipped drop (warning) is always preferable to a wrong one. Never aborts
+# the caller: `ws remove` must finish its teardown regardless.
+test_db_drop() {
+  local slug="$1" name out
+  "$TEST_DB_ENABLED" || return 0
+  name="$(resolve_test_db "$slug")" || return 0
+  if ! _test_db_name_ok "$name"; then
+    warn "NOT dropping '$name' — it fails the test-DB safety checks."
+    return 0
+  fi
+  if "$DRY_RUN"; then
+    printf '[dry-run] mysql: DROP DATABASE IF EXISTS \`%s\`\n' "$name"
+    return 0
+  fi
+  command -v mysql >/dev/null 2>&1 || return 0
+  if out="$(_test_db_sql "DROP DATABASE IF EXISTS \`$name\`")"; then
+    vlog "Dropped test DB: $name"
+  else
+    warn "Could not drop test DB '$name': ${out:-unknown error}"
+  fi
+  return 0
 }
 
 # Run an nginx command, hiding valet-wide deprecation warnings on success.

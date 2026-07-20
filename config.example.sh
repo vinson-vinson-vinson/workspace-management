@@ -101,6 +101,20 @@ POST_CREATE_TERMINALS=(
   # 'cd $WT_BACKEND && claude'
 )
 
+# ------------------------ per-workspace test database ------------------------
+# Each workspace gets its own MySQL test DB (created by `ws create`, dropped by
+# `ws remove`), and `ws test` runs the backend suite against it — so concurrent
+# test runs in different workspaces can't `migrate:fresh` over each other. The
+# shared test DB (= the bare prefix) and the dev DB are never touched. The
+# credentials are separate from the backend .env on purpose: provisioning needs
+# CREATE/DROP privileges the app user may not have. If they drift, the feature
+# fails loudly and harmlessly. All optional, with these defaults.
+TEST_DB_ENABLED=true
+TEST_DB_PREFIX="anny_bookings_test"
+TEST_DB_HOST="127.0.0.1"
+TEST_DB_USER="root"
+TEST_DB_PASSWORD=""
+
 # ------------------------------ serving (ws serve) ---------------------------
 # `ws serve` makes a task worktree reachable at <sub>.$BASE_DOMAIN using Laravel
 # Valet's nginx + wildcard cert. If you don't use `ws serve` you can leave this

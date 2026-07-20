@@ -144,6 +144,10 @@ confirm_removal() {
   # Never behind -v: a destructive prompt must state what it destroys.
   log "About to remove workspace: $slug"
   log "This will:"
+  if "$TEST_DB_ENABLED"; then
+    printf '  - Drop the workspace test database (%s), if any\n' \
+      "$(resolve_test_db "$slug" 2>/dev/null || printf '?')"
+  fi
   printf '  - Revert serve routing (remove nginx block + reload), if any\n'
   printf '  - Remove git worktrees (frontend + backend)\n'
   printf '  - Delete local branches\n'
@@ -272,6 +276,10 @@ cmd_remove() {
   vlog "Removing workspace..."
 
   revert_serve_setup "$slug"
+
+  # Guarded to the teeth (see _test_db_name_ok) and never fatal — a skipped
+  # drop is always preferable to a wrong one, and to an aborted teardown.
+  test_db_drop "$slug"
 
   # Prune stale registrations BEFORE the worktree/branch steps, not only after:
   # a half-deleted worktree (directory present but its .git link gone) fails

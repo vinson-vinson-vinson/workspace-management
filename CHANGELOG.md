@@ -9,6 +9,20 @@ when a release is tagged.
 
 ## [Unreleased]
 
+### Added
+- Per-workspace test databases: `ws create` provisions an empty MySQL DB per
+  workspace (`<TEST_DB_PREFIX>_<short-label>`, e.g.
+  `anny_bookings_test_cu_1234`), `ws remove` drops it, and the new `ws test
+  [slug] [phpunit args…]` runs the backend suite against it — so concurrent
+  test runs in different workspaces can't `migrate:fresh` over each other.
+  Works because phpunit.xml declares `DB_DATABASE` without `force="true"`, so
+  the exported variable wins. Fails closed: no isolated DB → no run, never a
+  silent fallback to the shared DB. Dropping is guarded hard (tool-derived
+  names only, prefix+suffix pattern, dev DB / shared DB / system schemas
+  denylisted) — a skipped drop always beats a wrong one. Config:
+  `TEST_DB_ENABLED` (default true), `TEST_DB_PREFIX/HOST/USER/PASSWORD`;
+  disabled = exactly the old behavior.
+
 ## [2.2.1] — 2026-07-20
 
 ### Fixed

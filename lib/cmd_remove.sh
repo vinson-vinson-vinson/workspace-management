@@ -190,8 +190,10 @@ remove_local_branch() {
   if git -C "$repo" show-ref --verify --quiet "refs/heads/$branch"; then
     vlog "Deleting local $label branch: $branch"
     # run_quiet: `git branch -D` prints "Deleted branch …", which would shred
-    # the spinner's redrawn line.
-    run_quiet git -C "$repo" branch -D "$branch"
+    # the spinner's redrawn line. Non-fatal: a branch still pinned by some
+    # worktree registration must not abort the rest of the teardown.
+    run_quiet git -C "$repo" branch -D "$branch" \
+      || warn "Could not delete $label branch '$branch' — remove it manually (git branch -D $branch)."
   else
     vlog "No local $label branch '$branch'. Skipping."
   fi
@@ -270,6 +272,14 @@ cmd_remove() {
   vlog "Removing workspace..."
 
   revert_serve_setup "$slug"
+
+  # Prune stale registrations BEFORE the worktree/branch steps, not only after:
+  # a half-deleted worktree (directory present but its .git link gone) fails
+  # `git worktree remove`'s validation AND pins its branch against deletion —
+  # pruning upfront lets both steps self-heal. Healthy registrations are
+  # untouched, so the normal path is unaffected.
+  run_quiet git -C "$FRONTEND_REPO" worktree prune
+  run_quiet git -C "$BACKEND_REPO" worktree prune
 
   spin "removing worktrees"
   remove_worktree "$FRONTEND_REPO" "$frontend_worktree" "Frontend"

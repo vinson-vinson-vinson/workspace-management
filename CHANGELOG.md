@@ -10,6 +10,11 @@ when a release is tagged.
 ## [Unreleased]
 
 ### Fixed
+- `ws remove`: self-heals from half-deleted worktrees (directory present but
+  its `.git` link gone — e.g. after an interrupted removal). Stale
+  registrations are pruned before the worktree/branch steps, since they fail
+  `git worktree remove`'s validation and pin the branch against deletion; a
+  branch that still can't be deleted warns instead of aborting the teardown.
 - `ws list`: long branch names in the MAIN row are elided like workspace
   slugs already were (each branch individually when the repos disagree), so
   they can't stretch the WORKSPACE column and push SERVE URL off-screen.

@@ -429,10 +429,13 @@ cmd_create() {
       fi
       sync_scm_ignores
       # Idempotent; also retrofits workspaces created before test DBs existed.
-      # Both checks in the CONDITION — a bare `x && ok` in the body would trip
-      # set -e whenever x is false.
-      if "$TEST_DB_ENABLED" && test_db_ensure "$branch_slug"; then
-        ok "test DB ready ($(resolve_test_db "$branch_slug"))"
+      # Everything in CONDITIONS — a bare `x && y` in a body trips set -e. The
+      # helper stops the spinner itself before any warning.
+      if "$TEST_DB_ENABLED"; then
+        spin "creating test database"
+        if test_db_ensure "$branch_slug"; then
+          spin_ok "test DB ready ($(resolve_test_db "$branch_slug"))"
+        fi
       fi
       open_workspace "$workspace_file"
       auto_serve_if_needed
@@ -489,10 +492,13 @@ cmd_create() {
   vlog "Worktrees created successfully. Opening workspace."
   sync_scm_ignores
   # Warn-and-continue: workspace creation must not fail over an optional
-  # convenience (no MySQL, bad creds); `ws test` re-ensures on demand. Both
-  # checks in the CONDITION — a bare `x && ok` in the body would trip set -e.
-  if "$TEST_DB_ENABLED" && test_db_ensure "$branch_slug"; then
-    ok "test DB ready ($(resolve_test_db "$branch_slug"))"
+  # convenience (no MySQL, bad creds); `ws test` re-ensures on demand. The
+  # helper stops the spinner itself before any warning.
+  if "$TEST_DB_ENABLED"; then
+    spin "creating test database"
+    if test_db_ensure "$branch_slug"; then
+      spin_ok "test DB ready ($(resolve_test_db "$branch_slug"))"
+    fi
   fi
   # Checked last, once it has actually happened — not announced in advance.
   open_workspace "$workspace_file"

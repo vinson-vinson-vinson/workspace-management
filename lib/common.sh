@@ -721,8 +721,12 @@ _test_db_sql() {
 test_db_ensure() {
   local slug="$1" name out
   "$TEST_DB_ENABLED" || { vlog "Per-workspace test DB disabled."; return 0; }
-  name="$(resolve_test_db "$slug")" || { warn "No test-DB name derivable from '$slug'."; return 1; }
+  # spin_stop before every warn: callers wrap this in a spinner, whose redrawn
+  # line would otherwise eat the warning. Safe no-op when none is running.
+  name="$(resolve_test_db "$slug")" \
+    || { spin_stop; warn "No test-DB name derivable from '$slug'."; return 1; }
   if ! _test_db_name_ok "$name"; then
+    spin_stop
     warn "Refusing to create test DB '$name' (fails the safety checks)."
     return 1
   fi
@@ -730,11 +734,13 @@ test_db_ensure() {
     printf '[dry-run] mysql: CREATE DATABASE IF NOT EXISTS \`%s\`\n' "$name"
     return 0
   fi
-  command -v mysql >/dev/null 2>&1 || { warn "mysql client not found — skipping test DB."; return 1; }
+  command -v mysql >/dev/null 2>&1 \
+    || { spin_stop; warn "mysql client not found — skipping test DB."; return 1; }
   if out="$(_test_db_sql "CREATE DATABASE IF NOT EXISTS \`$name\`")"; then
     vlog "Test DB ready: $name"
     return 0
   fi
+  spin_stop
   warn "Could not create test DB '$name': ${out:-unknown error}"
   return 1
 }
@@ -742,25 +748,32 @@ test_db_ensure() {
 # Drop the workspace's test DB. Guarded to the teeth — see _test_db_name_ok;
 # a skipped drop (warning) is always preferable to a wrong one. Never aborts
 # the caller: `ws remove` must finish its teardown regardless.
+# Returns 0 only when the drop actually went through (or was a dry-run), so
+# the caller's ✓ check can't claim "dropped" over the top of a warning; every
+# non-zero return has already printed its own warn. Callers must treat a
+# failure as non-fatal — teardown continues either way.
 test_db_drop() {
   local slug="$1" name out
-  "$TEST_DB_ENABLED" || return 0
-  name="$(resolve_test_db "$slug")" || return 0
+  "$TEST_DB_ENABLED" || return 1
+  name="$(resolve_test_db "$slug")" || { spin_stop; warn "No test-DB name derivable from '$slug' — nothing dropped."; return 1; }
   if ! _test_db_name_ok "$name"; then
+    spin_stop
     warn "NOT dropping '$name' — it fails the test-DB safety checks."
-    return 0
+    return 1
   fi
   if "$DRY_RUN"; then
     printf '[dry-run] mysql: DROP DATABASE IF EXISTS \`%s\`\n' "$name"
     return 0
   fi
-  command -v mysql >/dev/null 2>&1 || return 0
+  command -v mysql >/dev/null 2>&1 \
+    || { spin_stop; warn "mysql client not found — test DB '$name' not dropped."; return 1; }
   if out="$(_test_db_sql "DROP DATABASE IF EXISTS \`$name\`")"; then
     vlog "Dropped test DB: $name"
-  else
-    warn "Could not drop test DB '$name': ${out:-unknown error}"
+    return 0
   fi
-  return 0
+  spin_stop
+  warn "Could not drop test DB '$name': ${out:-unknown error}"
+  return 1
 }
 
 # Run an nginx command, hiding valet-wide deprecation warnings on success.

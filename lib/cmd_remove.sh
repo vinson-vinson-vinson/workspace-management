@@ -278,8 +278,14 @@ cmd_remove() {
   revert_serve_setup "$slug"
 
   # Guarded to the teeth (see _test_db_name_ok) and never fatal — a skipped
-  # drop is always preferable to a wrong one, and to an aborted teardown.
-  test_db_drop "$slug"
+  # drop is always preferable to a wrong one, and to an aborted teardown. The
+  # helper prints its own warning (stopping the spinner first) on any skip.
+  if "$TEST_DB_ENABLED"; then
+    spin "dropping test database"
+    if test_db_drop "$slug"; then
+      spin_ok "test DB dropped ($(resolve_test_db "$slug"))"
+    fi
+  fi
 
   # Prune stale registrations BEFORE the worktree/branch steps, not only after:
   # a half-deleted worktree (directory present but its .git link gone) fails

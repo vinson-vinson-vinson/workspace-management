@@ -9,6 +9,12 @@ when a release is tagged.
 
 ## [Unreleased]
 
+### Changed
+- Test-DB provisioning got proper spinner/check steps: `ws create` shows
+  "✓ test DB ready (<name>)", `ws remove` shows "✓ test DB dropped (<name>)".
+  The ✓ is honest — any skipped or failed DDL prints its warning instead of a
+  checkmark (helpers stop the spinner before warning so nothing gets eaten).
+
 ### Fixed
 - `ws serve`: the backend's own JS dependencies are now provisioned too —
   `node_modules` is cloned from the main repo exactly like `vendor/`. Without

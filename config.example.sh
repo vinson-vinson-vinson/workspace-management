@@ -31,6 +31,15 @@ WORKSPACES_ROOT="$ROOT_DIR/workspaces"
 # opens both main repos in one new VS Code window instead. Optional.
 # MAIN_WORKSPACE_FILE="$ROOT_DIR/full-stack.code-workspace"
 
+# Set to false to leave MAIN_WORKSPACE_FILE alone during the Source Control
+# ignore-list sync. With true (the default), the main workspace is treated like
+# any other: `ws create`/`remove`/`sync` rewrite its git.ignoredRepositories so
+# its window shows only the two main clones, not every task worktree. Turn this
+# off if you hand-maintain that file — the sync rewrites it as plain JSON, so
+# comments and custom formatting are lost. Ignored when MAIN_WORKSPACE_FILE is
+# unset. Optional; defaults to true.
+SYNC_MAIN_WORKSPACE=true
+
 # Base branch each brand-new worktree branch is cut from, per repo.
 FRONTEND_BASE_BRANCH="main"
 BACKEND_BASE_BRANCH="main"

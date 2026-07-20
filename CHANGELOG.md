@@ -16,6 +16,13 @@ when a release is tagged.
   checkmark (helpers stop the spinner before warning so nothing gets eaten).
 
 ### Fixed
+- The Source Control ignore-list sync now covers the main workspace
+  (`MAIN_WORKSPACE_FILE`) as well, not just the session workspaces — its VS Code
+  window listed every task worktree of both repos, since it lives outside
+  `WORKSPACES_ROOT` and the sync loop never visited it. It now shows only the
+  two main clones. Set `SYNC_MAIN_WORKSPACE=false` to leave that file untouched
+  (the sync rewrites it as plain JSON, dropping comments and custom
+  formatting).
 - `ws serve`: the backend's own JS dependencies are now provisioned too —
   `node_modules` is cloned from the main repo exactly like `vendor/`. Without
   it, `php artisan horizon:watch` died in every worktree (chokidar, via mjml,

@@ -18,8 +18,10 @@ Usage:
 Recompute the VS Code Source Control ignore-list (git.ignoredRepositories) in
 every workspace's .code-workspace file so each window shows only its own
 frontend/backend worktrees — hiding the other workspaces' worktrees and the
-main clones. Idempotent and safe to run anytime; runs automatically on
-`ws create` and `ws remove`.
+main clones. The main workspace (MAIN_WORKSPACE_FILE) is synced too, so it
+shows only the two main clones; set SYNC_MAIN_WORKSPACE=false to opt out.
+Idempotent and safe to run anytime; runs automatically on `ws create` and
+`ws remove`.
 
 Options:
   --dry-run     Show what would happen without writing any files.

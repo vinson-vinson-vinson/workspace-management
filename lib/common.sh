@@ -250,6 +250,7 @@ load_config() {
   USE_REMOTE_MAIN="${USE_REMOTE_MAIN:-false}"
   REQUIRE_CONFIRM_REMOVE="${REQUIRE_CONFIRM_REMOVE:-true}"
   MAIN_WORKSPACE_FILE="${MAIN_WORKSPACE_FILE:-}"
+  SYNC_MAIN_WORKSPACE="${SYNC_MAIN_WORKSPACE:-true}"
   # IDE per repo role (see config.example.sh); defaulted and validated here so
   # configs predating the settings keep working and typos fail loudly.
   FRONTEND_IDE="$(printf '%s' "${FRONTEND_IDE:-vscode}" | tr '[:upper:]' '[:lower:]')"
@@ -618,6 +619,24 @@ sync_scm_ignores() {
       warn "SCM sync: failed to update $wf (left unchanged)"
     fi
   done
+
+  # The main workspace is not a session dir, so the loop above never sees it —
+  # without this it keeps listing every task worktree of both repos. Its own
+  # repos are the two main clones; everything else gets hidden.
+  if [[ "$SYNC_MAIN_WORKSPACE" == true && -n "$MAIN_WORKSPACE_FILE" && -f "$MAIN_WORKSPACE_FILE" ]]; then
+    local -a main_ignores=()
+    for repo in "${all_repos[@]}"; do
+      [[ "$repo" == "$FRONTEND_REPO" || "$repo" == "$BACKEND_REPO" ]] && continue
+      main_ignores+=("$repo")
+    done
+    if update_workspace_ignores "$MAIN_WORKSPACE_FILE" ${main_ignores[@]+"${main_ignores[@]}"}; then
+      vlog "SCM sync: MAIN -> ${#main_ignores[@]} repo(s) hidden"
+      synced=$((synced + 1))
+    else
+      warn "SCM sync: failed to update $MAIN_WORKSPACE_FILE (left unchanged)"
+    fi
+  fi
+
   vlog "Synced VS Code Source Control ignore-lists for $synced workspace(s)."
   spin_ok "Source Control repo lists synced ($synced workspace(s))"
 }

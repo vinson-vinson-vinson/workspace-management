@@ -131,16 +131,26 @@ POST_CREATE_TERMINALS=(
   # 'cd $WT_BACKEND && claude'
 )
 
-# Command run in the two agent tabs — one per repo.
-# Optional; defaults to "claude".
-SESSION_AGENT_CMD="claude"
-
-# Backend tabs beside the agent (queue workers, schedulers). The frontend tabs
-# are derived from the served apps, so only the backend needs listing.
-# Optional; defaults to ("php artisan horizon").
-SESSION_BACKEND_CMDS=(
-  # "php artisan horizon"
-  # "php artisan schedule:work"
+# Tabs beyond the served apps, one entry each:
+#
+#     "NAME:frontend|backend:COMMAND"
+#
+# NAME is the tab title, the middle field picks which worktree it starts in,
+# and the rest of the line is the command. Only the first two colons split, so
+# a command may contain them (`php artisan schedule:work` works fine).
+#
+# The app tabs are derived — one `yarn serve-<app>` per served app — because
+# serving those is what `ws serve` does. Everything else is yours: however many
+# agents you want, in whichever repo, or none.
+#
+# Optional; the default below is two agents (one per repo, since an agent
+# inherits the AGENTS.md and branch conventions of the directory it starts in)
+# plus a queue worker.
+SESSION_TABS=(
+  "queue:backend:php artisan horizon"
+  "agent (api):backend:claude"
+  "agent (ui):frontend:claude"
+  # "scheduler:backend:php artisan schedule:work"
 )
 
 # ------------------------ per-workspace test database ------------------------

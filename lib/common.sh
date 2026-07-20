@@ -273,15 +273,16 @@ load_config() {
   # Commands auto-started in terminal tabs after ws create. $WT_FRONTEND and
   # $WT_BACKEND are substituted at runtime. Same +"" guard as above.
   POST_CREATE_TERMINALS=(${POST_CREATE_TERMINALS[@]+"${POST_CREATE_TERMINALS[@]}"})
-  # Agent started in each repo's agent tab. One per repo, not one per
-  # workspace: an agent inherits the CLAUDE.md and branch conventions of the
-  # directory it starts in, and the two repos differ on both.
-  SESSION_AGENT_CMD="${SESSION_AGENT_CMD:-claude}"
-  # Backend tabs beside the agent (queue workers, schedulers). The frontend
-  # tabs are derived from the served apps, so only the backend needs listing.
-  SESSION_BACKEND_CMDS=(${SESSION_BACKEND_CMDS[@]+"${SESSION_BACKEND_CMDS[@]}"})
-  [[ ${#SESSION_BACKEND_CMDS[@]} -gt 0 ]] \
-    || SESSION_BACKEND_CMDS=('php artisan horizon')
+  # Tabs beyond the served apps: "NAME:frontend|backend:COMMAND". The app tabs
+  # are derived (one `yarn serve-<app>` per served app) because serving is what
+  # `ws serve` is for; everything else — queue workers, schedulers, however many
+  # agents you want, in whichever repo — is yours to declare.
+  SESSION_TABS=(${SESSION_TABS[@]+"${SESSION_TABS[@]}"})
+  [[ ${#SESSION_TABS[@]} -gt 0 ]] || SESSION_TABS=(
+    "queue:backend:php artisan horizon"
+    "agent (api):backend:claude"
+    "agent (ui):frontend:claude"
+  )
 }
 
 # ------------------------------ session tabs --------------------------------
@@ -289,10 +290,11 @@ load_config() {
 # terminal is configured. Without this each backend grew its own idea of the
 # tab set and they drifted apart.
 #
-#   admin / shop     one per served app   -> yarn serve-<app>   (frontend wt)
-#   bookings-api     SESSION_BACKEND_CMDS -> e.g. artisan horizon (backend wt)
-#   agent (api)      SESSION_AGENT_CMD                          (backend wt)
-#   agent (ui)       SESSION_AGENT_CMD                          (frontend wt)
+#   admin / shop     one per served app -> yarn serve-<app>  (frontend wt)
+#   <SESSION_TABS>   whatever you declared — queue workers, agents, anything
+#
+# Only the app tabs are derived, because serving them is what `ws serve` does.
+# Everything else is config: how many agents, in which repo, or none at all.
 #
 # Emits one tab per line as NAME<TAB>CWD<TAB>COMMAND. Tab-separated because the
 # commands contain spaces, quotes and && — anything else needs quoting rules.
@@ -316,11 +318,18 @@ session_tabs() {
   for app in ${apps[@]+"${apps[@]}"}; do
     printf '%s\t%s\t%s\n' "$app" "$fe" "yarn serve-$app"
   done
-  for cmd in "${SESSION_BACKEND_CMDS[@]}"; do
-    printf '%s\t%s\t%s\n' "$(basename "$be")" "$be" "$cmd"
+  # "NAME:SIDE:COMMAND" — split on the FIRST two colons only, so a command may
+  # contain them (`php artisan schedule:work` is the obvious case).
+  local entry name side rest
+  for entry in ${SESSION_TABS[@]+"${SESSION_TABS[@]}"}; do
+    name="${entry%%:*}"; rest="${entry#*:}"
+    side="${rest%%:*}"; cmd="${rest#*:}"
+    case "$side" in
+      frontend) printf '%s\t%s\t%s\n' "$name" "$fe" "$cmd" ;;
+      backend)  printf '%s\t%s\t%s\n' "$name" "$be" "$cmd" ;;
+      *) warn "SESSION_TABS entry '$entry' has side '$side'; expected frontend|backend — skipped." ;;
+    esac
   done
-  printf '%s\t%s\t%s\n' "agent (api)" "$be" "$SESSION_AGENT_CMD"
-  printf '%s\t%s\t%s\n' "agent (ui)"  "$fe" "$SESSION_AGENT_CMD"
 }
 
 # --------------------------- post-create terminals --------------------------

@@ -63,15 +63,17 @@ when a release is tagged.
 ## [2.2.0] — 2026-07-20
 
 ### Added
-- One definition of the workspace's terminal tabs, shared by every terminal:
-  `admin`/`shop` (one per served app), `bookings-api` (`SESSION_BACKEND_CMDS`,
-  default `php artisan horizon`), and an agent tab per repo — `agent (api)` and
-  `agent (ui)` (`SESSION_AGENT_CMD`, default `claude`). One agent per repo
-  rather than per workspace, because an agent inherits the conventions of the
-  directory it starts in and the two repos agree on none of them.
-  `POST_CREATE_TERMINALS` now overrides that derived set instead of being the
-  only way to define it, and each tab carries its own cwd so the commands no
-  longer need a `cd` prefix.
+- One definition of the workspace's terminal tabs, shared by every terminal.
+  The app tabs are derived — one `yarn serve-<app>` per served app, since
+  serving those is what `ws serve` does — and everything else is declared in
+  the new `SESSION_TABS` config as `"NAME:frontend|backend:COMMAND"`: queue
+  workers, schedulers, however many agents you want, in whichever repo, or
+  none. Only the first two colons split, so a command may contain them
+  (`php artisan schedule:work`). The default is a queue worker plus one agent
+  per repo, since an agent inherits the conventions of the directory it starts
+  in. `POST_CREATE_TERMINALS` overrides the whole set instead of being the only
+  way to define it, and each tab carries its own cwd so commands no longer need
+  a `cd` prefix.
 - `ws remove` deletes the Warp launch configuration `ws serve` wrote for the
   workspace. Without it every workspace ever created left a file behind in
   `~/.warp/launch_configurations/`, cluttering Warp's launch-config picker

@@ -9,6 +9,16 @@ when a release is tagged.
 
 ## [Unreleased]
 
+### Added
+- `ws status [SLUG]`: a workspace health report — branch and git state per repo,
+  whether it is served, dev-server liveness per app, and dependencies
+  (node_modules, vendor, the Cognitor key, the per-workspace test DB). With no
+  SLUG it reports the workspace you are standing in; from anywhere else it
+  falls back to a one-line-per-workspace overview, which `--all` forces.
+  The test-DB row distinguishes "missing" from "can't check" — bad credentials
+  or a stopped MySQL report `? unavailable`, since the fix for that is nothing
+  like creating the database.
+
 ## [2.5.0] — 2026-07-21
 
 ### Added

@@ -9,6 +9,8 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.5.0] — 2026-07-21
+
 ### Added
 - One definition of the workspace's terminal tabs, shared by every terminal.
   The app tabs are derived — one `yarn serve-<app>` per served app, since
@@ -297,7 +299,8 @@ the identity change.
   own `<sub>.anny.dev` subdomain via Laravel Valet/nginx, Cognitor key
   seeding, `install.sh`, and Homebrew tap packaging.
 
-[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.4.0...HEAD
+[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.5.0...HEAD
+[2.5.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.2.1...v2.3.0
 [2.2.1]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.2.0...v2.2.1

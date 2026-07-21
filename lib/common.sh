@@ -379,9 +379,9 @@ print(json.dumps({"name": name, "windows": [{"tabs": tabs}]}, indent=2))
   open "warp://launch/${name}"
 }
 
-# Remove what `ws serve` wrote for SLUG. Separate from revert_serve_setup,
-# which returns early without an nginx block — a workspace can have a launch
-# config without having been served.
+# Remove the Warp launch config `ws create` wrote for SLUG. Separate from
+# revert_serve_setup, which returns early without an nginx block — a workspace
+# can have a launch config without having been served.
 remove_session_configs() {
   local slug="$1"
   local file="$HOME/.warp/launch_configurations/ws-${slug}.yaml"
@@ -390,7 +390,14 @@ remove_session_configs() {
     printf '[dry-run] rm -f %s\n' "$file"
     return 0
   fi
-  rm -f "$file" && vlog "Removed Warp launch config: $file"
+  # Explicit if, not `rm && vlog`: a failed rm (permissions) would otherwise
+  # trip set -e in the caller and abort the teardown over a leftover file.
+  if rm -f "$file"; then
+    vlog "Removed Warp launch config: $file"
+  else
+    warn "Could not remove Warp launch config: $file"
+  fi
+  return 0
 }
 
 # Open the session's terminals. $1/$2 are the frontend and backend worktrees,

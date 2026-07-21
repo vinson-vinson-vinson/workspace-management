@@ -97,18 +97,9 @@ EXTRA_WORKSPACE_FOLDERS=(
 # Terminal app used for the workspace's terminals: "terminal" (default) or
 # "warp". Optional.
 #
-# Both render the SAME set of tabs, derived from the served apps:
-#
-#   admin          yarn serve-admin        (frontend worktree)
-#   shop           yarn serve-shop         (frontend worktree)
-#   bookings-api   SESSION_BACKEND_CMDS    (backend worktree)
-#   agent (api)    SESSION_AGENT_CMD       (backend worktree)
-#   agent (ui)     SESSION_AGENT_CMD       (frontend worktree)
-#
-# One agent per repo, not per workspace: an agent inherits the AGENTS.md and
-# branch conventions of the directory it starts in, and the repos differ.
-#
-# What differs is the container:
+# Both render the SAME set of tabs: one `yarn serve-<app>` per served app,
+# plus every SESSION_TABS entry (default: a queue worker and one agent per
+# repo — see SESSION_TABS below). What differs is the container:
 #   terminal  one tab per command in Terminal.app
 #   warp      ONE window holding the tabs, via a generated launch configuration
 #             (Warp has no CLI and its URI scheme can't carry a command)

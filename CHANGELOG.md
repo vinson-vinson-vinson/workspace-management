@@ -9,6 +9,30 @@ when a release is tagged.
 
 ## [Unreleased]
 
+### Added
+- One definition of the workspace's terminal tabs, shared by every terminal.
+  The app tabs are derived — one `yarn serve-<app>` per served app, since
+  serving those is what `ws serve` does — and everything else is declared in
+  the new `SESSION_TABS` config as `"NAME:frontend|backend:COMMAND"`: queue
+  workers, schedulers, however many agents you want, in whichever repo, or
+  none. Only the first two colons split, so a command may contain them
+  (`php artisan schedule:work`). The default is a queue worker plus one agent
+  per repo, since an agent inherits the conventions of the directory it starts
+  in. `POST_CREATE_TERMINALS` overrides the whole set instead of being the only
+  way to define it, and each tab carries its own cwd so commands no longer need
+  a `cd` prefix.
+- `ws create` no longer tells you to start the dev servers it just started. The
+  landing box's `start it with: cd … && yarn serve-<app>` hand-over is right
+  for a bare `ws serve`, which starts nothing, but after `ws create` the
+  session terminals are already running those commands — following the advice
+  would start a second copy on a port the first one holds. `create` now tells
+  `serve` (a separate process, so it can't otherwise know) that terminals are
+  coming, and the box says so instead.
+- `ws remove` deletes the Warp launch configuration `ws create` wrote for the
+  workspace. Without it every workspace ever created left a file behind in
+  `~/.warp/launch_configurations/`, cluttering Warp's launch-config picker
+  permanently.
+
 ## [2.4.0] — 2026-07-20
 
 ### Changed
@@ -63,28 +87,6 @@ when a release is tagged.
 ## [2.2.0] — 2026-07-20
 
 ### Added
-- One definition of the workspace's terminal tabs, shared by every terminal.
-  The app tabs are derived — one `yarn serve-<app>` per served app, since
-  serving those is what `ws serve` does — and everything else is declared in
-  the new `SESSION_TABS` config as `"NAME:frontend|backend:COMMAND"`: queue
-  workers, schedulers, however many agents you want, in whichever repo, or
-  none. Only the first two colons split, so a command may contain them
-  (`php artisan schedule:work`). The default is a queue worker plus one agent
-  per repo, since an agent inherits the conventions of the directory it starts
-  in. `POST_CREATE_TERMINALS` overrides the whole set instead of being the only
-  way to define it, and each tab carries its own cwd so commands no longer need
-  a `cd` prefix.
-- `ws create` no longer tells you to start the dev servers it just started. The
-  landing box's `start it with: cd … && yarn serve-<app>` hand-over is right
-  for a bare `ws serve`, which starts nothing, but after `ws create` the
-  session terminals are already running those commands — following the advice
-  would start a second copy on a port the first one holds. `create` now tells
-  `serve` (a separate process, so it can't otherwise know) that terminals are
-  coming, and the box says so instead.
-- `ws remove` deletes the Warp launch configuration `ws serve` wrote for the
-  workspace. Without it every workspace ever created left a file behind in
-  `~/.warp/launch_configurations/`, cluttering Warp's launch-config picker
-  permanently.
 - `ws create` now serves the workspace for non-VS-Code setups. The
   `.code-workspace` tasks block only ever fires in VS Code, so since IDEs became
   configurable in 2.1.0 a Zed/PhpStorm user finished `ws create` with an

@@ -16,8 +16,9 @@ when a release is tagged.
   to its open merge request per repo, and — when `TASK_URL_TEMPLATE` is set — a
   link to its tracker task. With no SLUG it reports the workspace you are
   standing in; from anywhere else it falls back to a one-line-per-workspace
-  overview, which `--all` forces (the overview stays filesystem-only — the MR
-  links are a network call and belong to the single-workspace report).
+  overview, which `--all` forces. Everything but the MR link is local, so the
+  default report is ~0.5s; MR lookups are a glab network call and only run
+  under `--mr`.
   The test-DB row distinguishes "missing" from "can't check" — bad credentials
   or a stopped MySQL report `? unavailable`, since the fix for that is nothing
   like creating the database.

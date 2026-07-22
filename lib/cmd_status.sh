@@ -25,6 +25,8 @@ the overview).
 
 Options:
       --all     Overview of every workspace instead of one report.
+      --mr      Also look up each repo's open merge request (a network call,
+                so it's off by default — the rest of the report is local).
   -h, --help    Show this help.
 USAGE
 }
@@ -118,11 +120,12 @@ _status_check() {
 
 # ─── main ─────────────────────────────────────────────────────────────────
 cmd_status() {
-  local slug="" show_all=false
+  local slug="" show_all=false show_mr=false
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --all) show_all=true; shift ;;
+      --mr) show_mr=true; shift ;;
       -h|--help) cmd_status_usage; exit 0 ;;
       -*) err "Unknown option: $1"; cmd_status_usage; exit 1 ;;
       *)  [[ -z "$slug" ]] || { err "Unexpected extra argument: $1"; exit 1; }
@@ -177,18 +180,19 @@ cmd_status() {
   done < <(all_app_keys)
 
   # ── dev-server liveness ────────────────────────────────────────────────
+  # One lsof for every listening port, then a membership test — four separate
+  # `lsof -i :PORT` calls cost ~4x as much (each is a full process spawn).
+  # `|| true`: lsof exits non-zero when nothing listens, which set -e would
+  # otherwise treat as fatal.
+  local listening
+  listening="$(lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null | awk 'NR>1 {n=$9; sub(/.*:/,"",n); print n}' | sort -u || true)"
   # Parallel "key:value" array rather than declare -A: macOS ships bash 3.2,
-  # which has no associative arrays, and /bin/bash is what `ws` actually runs
-  # under. Same trick as the APPS registry in config.sh.
+  # which has no associative arrays. Same trick as the APPS registry.
   local -a app_running=()
-  local port pid
+  local port
   for key in "${apps[@]}"; do
     port="$(port_for "$key")"
-    # `|| true`: lsof exits 1 when nothing is listening, and an assignment
-    # takes the exit status of its command substitution — so under set -e the
-    # first stopped dev server would abort `ws status` entirely.
-    pid="$(lsof -i ":$port" -sTCP:LISTEN -t 2>/dev/null || true)"
-    if [[ -n "$pid" ]]; then
+    if printf '%s\n' "$listening" | grep -qxF "$port"; then
       app_running+=("${key}:true")
     else
       app_running+=("${key}:false")
@@ -213,15 +217,14 @@ cmd_status() {
   local node_modules_ok=false
   [[ -d "$wt_fe/node_modules" ]] && node_modules_ok=true
 
-  # ── links (single-workspace only; each MR is a network call) ────────────
-  # Compute the auth check once, not per repo.
-  MR_LOOKUP=false
-  if command -v glab >/dev/null 2>&1 && glab auth status >/dev/null 2>&1; then
-    MR_LOOKUP=true
-  fi
+  # ── links ───────────────────────────────────────────────────────────────
+  # The task link is local string work; MR links are a glab call each, so they
+  # only run under --mr. No separate `glab auth status` preflight (another round
+  # trip) — _mr_url just yields nothing when glab is absent or unauthenticated.
+  MR_LOOKUP="$show_mr"
   local task_url fe_mr="" be_mr=""
   task_url="$(_task_url "$slug")"
-  if "$MR_LOOKUP"; then
+  if "$MR_LOOKUP" && command -v glab >/dev/null 2>&1; then
     fe_mr="$(_mr_url "$wt_fe" "$fe_branch")"
     be_mr="$(_mr_url "$wt_be" "$be_branch")"
   fi

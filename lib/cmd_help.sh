@@ -18,6 +18,7 @@ ${C_BOLD}Commands${C_RESET}
   ${C_GREEN}open${C_RESET} <N|slug>             Open a workspace in the configured IDE(s) by its ${C_DIM}ws list${C_RESET} index
   ${C_GREEN}serve${C_RESET} [slug] [options]    Serve a workspace at its subdomain ${C_DIM}(defaults to cwd)${C_RESET}
   ${C_GREEN}status${C_RESET} [slug]             Workspace health check ${C_DIM}(branches, git, serving, ports, deps)${C_RESET}
+  ${C_GREEN}mr${C_RESET} [--fe|--be|--all]   ${C_DIM}Open/create a GitLab MR per repo, only where the branch is ahead${C_RESET}
   ${C_GREEN}remove${C_RESET} [slug] [options]   Tear a workspace down safely ${C_DIM}(defaults to cwd)${C_RESET}
   ${C_GREEN}test${C_RESET} [slug] [args]       Run the backend suite on the workspace's OWN test DB ${C_DIM}(defaults to cwd)${C_RESET}
   ${C_GREEN}sync${C_RESET}                     Refresh each window's Source Control repo list ${C_DIM}(auto on create/remove)${C_RESET}

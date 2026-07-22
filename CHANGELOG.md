@@ -10,6 +10,15 @@ when a release is tagged.
 ## [Unreleased]
 
 ### Added
+- `ws mr [SLUG] [--fe|--be|--all] [--target <branch>]`: for each repo of a
+  workspace, open its GitLab merge request or create a draft — but only where
+  the branch is actually ahead of its target, so a repo with nothing to merge
+  is skipped and the two sides are handled independently. The target defaults
+  per repo to the branch it was cut from (`FRONTEND_BASE_BRANCH` /
+  `BACKEND_BASE_BRANCH`, both `main` by default); `--target` overrides. The
+  branch is pushed first when the remote is missing or behind, and glab auth
+  (`GITLAB_TOKEN` or `glab auth login`) is checked up front rather than failing
+  after the push. `--dry-run` shows the plan without pushing or touching GitLab.
 - `ws list` shows the current version, centered in grey under the wordmark
   banner. TTY-only — the plain piped output is unchanged.
 

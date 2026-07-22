@@ -263,6 +263,10 @@ load_config() {
   # Per-workspace test database (see cmd_test.sh); defaults keep configs
   # predating the feature working, with the feature ON — creation is
   # warn-and-continue, so machines without MySQL lose nothing.
+  # URL template for a task tracker, {id} replaced by the task id parsed from a
+  # task slug. Empty (default) = no task link. e.g. ClickUp:
+  # "https://app.clickup.com/t/{id}".
+  TASK_URL_TEMPLATE="${TASK_URL_TEMPLATE:-}"
   TEST_DB_ENABLED="${TEST_DB_ENABLED:-true}"
   TEST_DB_PREFIX="${TEST_DB_PREFIX:-anny_bookings_test}"
   TEST_DB_HOST="${TEST_DB_HOST:-127.0.0.1}"

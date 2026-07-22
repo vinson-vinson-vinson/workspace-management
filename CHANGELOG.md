@@ -12,9 +12,12 @@ when a release is tagged.
 ### Added
 - `ws status [SLUG]`: a workspace health report — branch and git state per repo,
   whether it is served, dev-server liveness per app, and dependencies
-  (node_modules, vendor, the Cognitor key, the per-workspace test DB). With no
-  SLUG it reports the workspace you are standing in; from anywhere else it
-  falls back to a one-line-per-workspace overview, which `--all` forces.
+  (node_modules, vendor, the Cognitor key, the per-workspace test DB), a link
+  to its open merge request per repo, and — when `TASK_URL_TEMPLATE` is set — a
+  link to its tracker task. With no SLUG it reports the workspace you are
+  standing in; from anywhere else it falls back to a one-line-per-workspace
+  overview, which `--all` forces (the overview stays filesystem-only — the MR
+  links are a network call and belong to the single-workspace report).
   The test-DB row distinguishes "missing" from "can't check" — bad credentials
   or a stopped MySQL report `? unavailable`, since the fix for that is nothing
   like creating the database.

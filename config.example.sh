@@ -52,6 +52,12 @@ BACKEND_BASE_BRANCH="main"
 # "don't touch a main/base checkout" branch check. Case-insensitive.
 TASK_ID_PREFIX="CU"
 
+# Optional URL template for your task tracker. {id} is replaced by the task id
+# parsed from a task slug (CU-1234_x -> 1234), and `ws status` shows a clickable
+# link. Empty = no link. ClickUp example:
+# TASK_URL_TEMPLATE="https://app.clickup.com/t/{id}"
+TASK_URL_TEMPLATE=""
+
 # IDE used to open workspaces, per repo role. Allowed values: vscode (the
 # default), phpstorm, webstorm, zed. With the SAME value on both sides,
 # `ws open` / `ws create` open the workspace combined in ONE window (vscode:

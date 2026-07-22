@@ -213,6 +213,19 @@ cmd_status() {
   local node_modules_ok=false
   [[ -d "$wt_fe/node_modules" ]] && node_modules_ok=true
 
+  # ── links (single-workspace only; each MR is a network call) ────────────
+  # Compute the auth check once, not per repo.
+  MR_LOOKUP=false
+  if command -v glab >/dev/null 2>&1 && glab auth status >/dev/null 2>&1; then
+    MR_LOOKUP=true
+  fi
+  local task_url fe_mr="" be_mr=""
+  task_url="$(_task_url "$slug")"
+  if "$MR_LOOKUP"; then
+    fe_mr="$(_mr_url "$wt_fe" "$fe_branch")"
+    be_mr="$(_mr_url "$wt_be" "$be_branch")"
+  fi
+
   # ═══════════════════════════════════════════════════════════════════════
   # Render
   # ═══════════════════════════════════════════════════════════════════════
@@ -220,6 +233,7 @@ cmd_status() {
   printf '\n'
   printf '  %sWORKSPACE%s  %s%s%s\n' "$C_BOLD" "$C_RESET" "$C_CYAN" "$slug" "$C_RESET"
   printf '  %-11s %s\n' "Path" "$session_dir"
+  [[ -n "$task_url" ]] && printf '  %-11s %s\n' "Task" "$(_status_link "$task_url")"
 
   # --- served row ---
   local served_label served_url
@@ -238,6 +252,7 @@ cmd_status() {
   printf '    %-15s %s\n' "Branch" "$fe_branch"
   printf '    %-15s %s\n' "Git" "$fe_git"
   _status_check "node_modules" "$node_modules_ok"
+  _status_mr "$fe_mr"
 
   # ── Backend block ───────────────────────────────────────────────────────
   printf '\n  %s%sBACKEND%s (%s)%s\n' \
@@ -247,6 +262,7 @@ cmd_status() {
   _status_check "vendor" "$vendor_ok"
   _status_check "cognitor.key" "$cognitor_ok"
   _status_state "test db" "$test_db_state"
+  _status_mr "$be_mr"
 
   # ── Dev servers ─────────────────────────────────────────────────────────
   printf '\n  %s%sDEV SERVERS%s\n' "$C_BOLD" "$C_YELLOW" "$C_RESET"
@@ -276,6 +292,42 @@ cmd_status() {
   fi
 
   printf '\n'
+}
+
+# Task-tracker URL for a slug, or nothing. Needs TASK_URL_TEMPLATE set and the
+# slug to be a task (<PREFIX>-<id>_…); {id} is the bit between the prefix dash
+# and the first underscore.
+_task_url() {
+  local slug="$1" id
+  [[ -n "$TASK_URL_TEMPLATE" ]] || return 0
+  case "$slug" in
+    "${TASK_ID_PREFIX}-"*|"${TASK_ID_PREFIX_LC}-"*) ;;
+    *) return 0 ;;
+  esac
+  id="${slug#*-}"; id="${id%%_*}"
+  [[ -n "$id" ]] || return 0
+  printf '%s' "${TASK_URL_TEMPLATE//\{id\}/$id}"
+}
+
+# web_url of the open MR for BRANCH in WORKTREE, or nothing. One network call —
+# callers gate on MR_LOOKUP so it never runs in the fleet overview.
+_mr_url() {
+  local worktree="$1" branch="$2" json
+  [[ -n "$branch" ]] || return 0
+  json="$( cd "$worktree" 2>/dev/null && glab mr list --source-branch "$branch" --output json 2>/dev/null )" || return 0
+  [[ -n "$json" && "$json" != "[]" ]] || return 0
+  printf '%s' "$json" | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["web_url"])' 2>/dev/null || true
+}
+
+# Render an "MR" row: the link, or a dim "none". Only when MR lookup is on.
+_status_mr() {
+  local url="$1"
+  "$MR_LOOKUP" || return 0
+  if [[ -n "$url" ]]; then
+    printf '    %-15s %s\n' "MR" "$(_status_link "$url")"
+  else
+    printf '    %-15s %snone%s\n' "MR" "$C_DIM" "$C_RESET"
+  fi
 }
 
 # Clickable green link for a URL. Terminal-only; plain text otherwise.
@@ -336,20 +388,33 @@ _status_overview() {
       done
     fi
 
-    rows+=("${slug}|${branch}|${git_state}|${served}|${up}/${total}")
+    # No BRANCH column: ws names the branch after the slug, so it would just
+    # repeat this value. `ws status <slug>` shows the actual branch.
+    rows+=("${slug}|${git_state}|${served}|${up}/${total}")
   done
   spin_stop
 
-  printf '\n  %-24s %-22s %-9s %-7s %s\n' "WORKSPACE" "BRANCH" "GIT" "SERVED" "SERVERS"
-  local row name br gs sv sr colour
+  # Size the name column to the data, capped — a ClickUp task slug can run 60+
+  # chars and would otherwise shove every other column off the screen.
+  local cap=40 name_w=9 row name
+  for row in "${rows[@]}"; do
+    name="${row%%|*}"
+    [[ ${#name} -gt $name_w ]] && name_w=${#name}
+  done
+  [[ $name_w -gt $cap ]] && name_w=$cap
+
+  printf '\n  %-*s %-9s %-7s %s\n' "$name_w" "WORKSPACE" "GIT" "SERVED" "SERVERS"
+  local gs sv sr colour
   for row in "${rows[@]}"; do
     name="${row%%|*}"; row="${row#*|}"
-    br="${row%%|*}";   row="${row#*|}"
     gs="${row%%|*}";   row="${row#*|}"
     sv="${row%%|*}";   sr="${row#*|}"
+    # ASCII '~' marker, not '…': printf pads by bytes, so a multibyte ellipsis
+    # would misalign the columns it's meant to fix.
+    [[ ${#name} -gt $name_w ]] && name="${name:0:name_w-1}~"
     [[ "$gs" == "clean" ]] && colour="$C_GREEN" || colour="$C_YELLOW"
-    printf '  %-24s %-22s %b%-9s%b %-7s %s\n' \
-      "$name" "$br" "$colour" "$gs" "$C_RESET" "$sv" "$sr"
+    printf '  %-*s %b%-9s%b %-7s %s\n' \
+      "$name_w" "$name" "$colour" "$gs" "$C_RESET" "$sv" "$sr"
   done
   printf '\n  %sws status <slug>%s for the full report.\n\n' "$C_DIM" "$C_RESET"
 }

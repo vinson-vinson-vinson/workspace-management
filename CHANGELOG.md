@@ -9,6 +9,10 @@ when a release is tagged.
 
 ## [Unreleased]
 
+### Added
+- `ws list` shows the current version, centered in grey under the wordmark
+  banner. TTY-only — the plain piped output is unchanged.
+
 ## [2.6.0] — 2026-07-22
 
 ### Added

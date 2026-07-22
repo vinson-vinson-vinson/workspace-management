@@ -231,6 +231,13 @@ cmd_list() {
   # its gradient rules cascading out to both box edges.
   local box_w=$((idxw + wsw + urlw + 10))
   wsm_banner 2 "$box_w"
+
+  # Version tag, centered under the wordmark (which is itself centered on the
+  # box width, so centering on box_w lines the two up).
+  local ver="v$WSM_VERSION"
+  local verpad=$(( (box_w - ${#ver}) / 2 ))
+  (( verpad < 0 )) && verpad=0
+  printf '  %*s%s%s%s\n' "$verpad" "" "$C_DIM" "$ver" "$C_RESET"
   printf '\n'
 
   local seg1 seg2 seg3 sep="${C_DIM}│${C_RESET}"

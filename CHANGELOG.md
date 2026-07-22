@@ -9,6 +9,8 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.6.0] — 2026-07-22
+
 ### Added
 - `ws status [SLUG]`: a workspace health report styled to match `ws list` and
   `ws serve` — the workspace's own accent swatch over the brand gradient rule,
@@ -312,7 +314,8 @@ the identity change.
   own `<sub>.anny.dev` subdomain via Laravel Valet/nginx, Cognitor key
   seeding, `install.sh`, and Homebrew tap packaging.
 
-[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.5.0...HEAD
+[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.6.0...HEAD
+[2.6.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.5.0...v2.6.0
 [2.5.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.2.1...v2.3.0

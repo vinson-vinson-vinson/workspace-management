@@ -27,6 +27,9 @@ Options:
       --all     Overview of every workspace instead of one report.
       --mr      Also look up each repo's open merge request (a network call,
                 so it's off by default — the rest of the report is local).
+      --json    Machine-readable output, including the dependency checks
+                (node_modules, vendor, cognitor key, test DB) the human view
+                omits. Combine with --mr to include the MR links.
   -h, --help    Show this help.
 USAGE
 }
@@ -94,38 +97,15 @@ _test_db_state() {
   esac
 }
 
-# Like _status_check but for a state that isn't a boolean.
-_status_state() {
-  local label="$1" state="$2" icon
-  case "$state" in
-    yes)         icon="${C_GREEN}✓${C_RESET}" ;;
-    disabled)    icon="${C_DIM}— disabled${C_RESET}" ;;
-    unavailable) icon="${C_YELLOW}? unavailable${C_RESET}" ;;
-    *)           icon="${C_YELLOW}✗${C_RESET}" ;;
-  esac
-  printf '  %-18s %b\n' "$label" "$icon"
-}
-
-# ─── status check outputs (one per concern, @ok/@warn-style) ──────────────
-_status_check() {
-  local label="$1" ok="$2"
-  local check icon
-  if "$ok"; then
-    check="${C_GREEN}✓${C_RESET}"
-  else
-    check="${C_YELLOW}✗${C_RESET}"
-  fi
-  printf '  %-18s %s\n' "$label" "$check"
-}
-
 # ─── main ─────────────────────────────────────────────────────────────────
 cmd_status() {
-  local slug="" show_all=false show_mr=false
+  local slug="" show_all=false show_mr=false show_json=false
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --all) show_all=true; shift ;;
       --mr) show_mr=true; shift ;;
+      --json) show_json=true; shift ;;
       -h|--help) cmd_status_usage; exit 0 ;;
       -*) err "Unknown option: $1"; cmd_status_usage; exit 1 ;;
       *)  [[ -z "$slug" ]] || { err "Unexpected extra argument: $1"; exit 1; }
@@ -229,70 +209,77 @@ cmd_status() {
     be_mr="$(_mr_url "$wt_be" "$be_branch")"
   fi
 
+  # ── which apps are actually served ──────────────────────────────────────
+  # DEV SERVERS should list what this workspace serves, not every app that
+  # happens to have a directory — panels/outlook aren't served by default and
+  # were just noise. Read the nginx block for the ports it proxies; if the
+  # workspace isn't served yet, fall back to what it WOULD serve so "stopped"
+  # still means something.
+  local -a served_apps=()
+  local conf="$VALET_NGINX_DIR/$host" d
+  for key in "${apps[@]}"; do
+    if "$served"; then
+      grep -qE "127\.0\.0\.1:$(port_for "$key")([^0-9]|$)" "$conf" 2>/dev/null \
+        && served_apps+=("$key")
+    else
+      for d in "${DEFAULT_APPS[@]}"; do [[ "$key" == "$d" ]] && served_apps+=("$key"); done
+    fi
+  done
+
+  # ── horizon (the backend queue worker) ──────────────────────────────────
+  local horizon_state="stopped"
+  _horizon_running "$wt_be" && horizon_state="running"
+
+  if "$show_json"; then
+    _status_json; return 0
+  fi
+
   # ═══════════════════════════════════════════════════════════════════════
   # Render
   # ═══════════════════════════════════════════════════════════════════════
 
-  printf '\n'
-  printf '  %sWORKSPACE%s  %s%s%s\n' "$C_BOLD" "$C_RESET" "$C_CYAN" "$slug" "$C_RESET"
-  printf '  %-11s %s\n' "Path" "$session_dir"
-  [[ -n "$task_url" ]] && printf '  %-11s %s\n' "Task" "$(_status_link "$task_url")"
+  local L=10   # label column width, shared by every block
 
-  # --- served row ---
-  local served_label served_url
+  # Header — the workspace's own accent (its title-bar colour, the same one
+  # `ws list` swatches and the favicon rings use) over the brand gradient rule,
+  # so status reads as part of the same family as `ws list` / `ws serve`.
+  local accent bar swatch
+  accent="$(_ws_color "$slug")"
+  bar="$(_accent_seq "$accent")"; [[ -n "$bar" ]] || bar="$C_DIM"
+  swatch="$(_ws_swatch "$accent")"; [[ -n "$swatch" ]] || swatch="${C_DIM}●${C_RESET}"
+
+  printf '\n  %s %s%s%s\n' "$swatch" "$C_BOLD" "$slug" "$C_RESET"
+  printf '  %s\n' "$(ws_grad "$(ws_rule '─' 46)" 46)"
+  printf '  %-*s %s\n' "$L" "path" "$session_dir"
+  [[ -n "$task_url" ]] && printf '  %-*s %s\n' "$L" "task" "$(_status_link "$task_url")"
   if "$served"; then
-    served_label="${C_GREEN}✓${C_RESET}"
-    served_url="$(_status_link "https://${host}${ADMIN_PATH}")"
+    printf '  %-*s %s\n' "$L" "url" "$(_status_link "https://${host}${ADMIN_PATH}")"
   else
-    served_label="${C_DIM}—${C_RESET}"
-    served_url="${C_DIM}not served${C_RESET}"
+    printf '  %-*s %snot served%s\n' "$L" "url" "$C_DIM" "$C_RESET"
   fi
-  printf '  %-11s %s  %s\n' "Served" "$served_label" "$served_url"
 
-  # ── Frontend block ──────────────────────────────────────────────────────
-  printf '\n  %s%sFRONTEND%s (%s)%s\n' \
-    "$C_BOLD" "$C_BLUE" "$C_RESET" "$FRONTEND_DIR_NAME" "$C_RESET"
-  printf '    %-15s %s\n' "Branch" "$fe_branch"
-  printf '    %-15s %s\n' "Git" "$fe_git"
-  _status_check "node_modules" "$node_modules_ok"
+  # ── Frontend ────────────────────────────────────────────────────────────
+  printf '\n  %s▍%s %sfrontend%s  %s%s%s\n' \
+    "$bar" "$C_RESET" "$C_BOLD" "$C_RESET" "$C_DIM" "$FRONTEND_DIR_NAME" "$C_RESET"
+  printf '  %-*s %s\n' "$L" "branch" "$fe_branch"
+  printf '  %-*s %s\n' "$L" "git" "$(_git_colour "$fe_git")"
   _status_mr "$fe_mr"
-
-  # ── Backend block ───────────────────────────────────────────────────────
-  printf '\n  %s%sBACKEND%s (%s)%s\n' \
-    "$C_BOLD" "$C_MAGENTA" "$C_RESET" "$BACKEND_DIR_NAME" "$C_RESET"
-  printf '    %-15s %s\n' "Branch" "$be_branch"
-  printf '    %-15s %s\n' "Git" "$be_git"
-  _status_check "vendor" "$vendor_ok"
-  _status_check "cognitor.key" "$cognitor_ok"
-  _status_state "test db" "$test_db_state"
-  _status_mr "$be_mr"
-
-  # ── Dev servers ─────────────────────────────────────────────────────────
-  printf '\n  %s%sDEV SERVERS%s\n' "$C_BOLD" "$C_YELLOW" "$C_RESET"
-  if [[ ${#apps[@]} -eq 0 ]]; then
-    printf '    %s(no servable apps)%s\n' "$C_DIM" "$C_RESET"
-  else
-    local running_label entry is_running
-    for key in "${apps[@]}"; do
-      port="$(port_for "$key")"
-      # Look the key up in the parallel array (see the bash 3.2 note above).
-      # Full if/then, not `[[ … ]] && break`: under set -e a non-matching last
-      # iteration would return 1 and take the whole command down with it.
-      is_running=false
-      for entry in ${app_running[@]+"${app_running[@]}"}; do
-        if [[ "${entry%%:*}" == "$key" ]]; then
-          is_running="${entry#*:}"
-          break
-        fi
-      done
-      if "$is_running"; then
-        running_label="${C_GREEN}running${C_RESET}"
-      else
-        running_label="${C_DIM}not running${C_RESET}"
-      fi
-      printf '    %-10s :%-6s %s\n' "$key" "$port" "$running_label"
+  local key entry is_running
+  for key in ${served_apps[@]+"${served_apps[@]}"}; do
+    is_running=false
+    for entry in ${app_running[@]+"${app_running[@]}"}; do
+      [[ "${entry%%:*}" == "$key" ]] && { is_running="${entry#*:}"; break; }
     done
-  fi
+    _server_line "$key" ":$(port_for "$key")" "$is_running"
+  done
+
+  # ── Backend ─────────────────────────────────────────────────────────────
+  printf '\n  %s▍%s %sbackend%s  %s%s%s\n' \
+    "$bar" "$C_RESET" "$C_BOLD" "$C_RESET" "$C_DIM" "$BACKEND_DIR_NAME" "$C_RESET"
+  printf '  %-*s %s\n' "$L" "branch" "$be_branch"
+  printf '  %-*s %s\n' "$L" "git" "$(_git_colour "$be_git")"
+  _status_mr "$be_mr"
+  _server_line "horizon" "" "$([[ "$horizon_state" == running ]] && echo true || echo false)"
 
   printf '\n'
 }
@@ -327,10 +314,96 @@ _status_mr() {
   local url="$1"
   "$MR_LOOKUP" || return 0
   if [[ -n "$url" ]]; then
-    printf '    %-15s %s\n' "MR" "$(_status_link "$url")"
+    printf '  %-10s %s\n' "mr" "$(_status_link "$url")"
   else
-    printf '    %-15s %snone%s\n' "MR" "$C_DIM" "$C_RESET"
+    printf '  %-10s %snone%s\n' "mr" "$C_DIM" "$C_RESET"
   fi
+}
+
+# "clean" in green, anything else (uncommitted/unpushed) in yellow.
+_git_colour() {
+  [[ "$1" == "clean" ]] && printf '%sclean%s' "$C_GREEN" "$C_RESET" \
+    || printf '%s%s%s' "$C_YELLOW" "$1" "$C_RESET"
+}
+
+# One "server" line: name, optional detail (a :port), and running/stopped.
+_server_line() {
+  local label="$1" detail="$2" up="$3" state
+  if [[ "$up" == "true" ]]; then
+    state="${C_GREEN}running${C_RESET}"
+  else
+    state="${C_DIM}stopped${C_RESET}"
+  fi
+  printf '  %-10s %-7s %s\n' "$label" "$detail" "$state"
+}
+
+# True if a `php artisan horizon` is running out of this backend worktree.
+# Matched by cwd, since horizon's argv carries no path — pgrep alone can't tell
+# one workspace's worker from another's.
+_horizon_running() {
+  local wt_be="$1" pid wd
+  for pid in $(pgrep -f 'artisan horizon' 2>/dev/null); do
+    wd="$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1)"
+    case "$wd" in "$wt_be"*) return 0 ;; esac
+  done
+  return 1
+}
+
+# Machine-readable report. Reads cmd_status's locals (bash dynamic scope) and
+# emits JSON via python3 — the deps live here rather than cluttering the human
+# view, which is almost always all-green. Env vars, not argv, to sidestep
+# quoting.
+_status_json() {
+  local key entry is_running apps_lines=""
+  for key in ${served_apps[@]+"${served_apps[@]}"}; do
+    is_running=false
+    for entry in ${app_running[@]+"${app_running[@]}"}; do
+      [[ "${entry%%:*}" == "$key" ]] && { is_running="${entry#*:}"; break; }
+    done
+    apps_lines="${apps_lines}$(printf '%s\t%s\t%s' "$key" "$(port_for "$key")" "$is_running")
+"
+  done
+
+  WSJ_SLUG="$slug" WSJ_PATH="$session_dir" WSJ_SERVED="$served" \
+  WSJ_HOST="$host" WSJ_ADMIN="$ADMIN_PATH" WSJ_TASK="$task_url" \
+  WSJ_FE_BRANCH="$fe_branch" WSJ_FE_GIT="$fe_git" WSJ_NODE="$node_modules_ok" WSJ_FE_MR="$fe_mr" \
+  WSJ_BE_BRANCH="$be_branch" WSJ_BE_GIT="$be_git" WSJ_VENDOR="$vendor_ok" WSJ_COG="$cognitor_ok" \
+  WSJ_TESTDB="$test_db_state" WSJ_HORIZON="$horizon_state" WSJ_BE_MR="$be_mr" \
+  WSJ_APPS="$apps_lines" \
+  python3 <<'PY'
+import json, os
+def b(v): return v == "true"
+served = b(os.environ["WSJ_SERVED"])
+servers = []
+for line in os.environ.get("WSJ_APPS", "").splitlines():
+    if not line.strip():
+        continue
+    name, port, running = line.split("\t")
+    servers.append({"app": name, "port": int(port), "running": b(running)})
+print(json.dumps({
+    "slug": os.environ["WSJ_SLUG"],
+    "path": os.environ["WSJ_PATH"],
+    "served": served,
+    "url": ("https://%s%s" % (os.environ["WSJ_HOST"], os.environ["WSJ_ADMIN"])) if served else None,
+    "task_url": os.environ["WSJ_TASK"] or None,
+    "frontend": {
+        "branch": os.environ["WSJ_FE_BRANCH"],
+        "git": os.environ["WSJ_FE_GIT"],
+        "node_modules": b(os.environ["WSJ_NODE"]),
+        "servers": servers,
+        "mr": os.environ["WSJ_FE_MR"] or None,
+    },
+    "backend": {
+        "branch": os.environ["WSJ_BE_BRANCH"],
+        "git": os.environ["WSJ_BE_GIT"],
+        "vendor": b(os.environ["WSJ_VENDOR"]),
+        "cognitor_key": b(os.environ["WSJ_COG"]),
+        "test_db": os.environ["WSJ_TESTDB"],
+        "horizon": os.environ["WSJ_HORIZON"],
+        "mr": os.environ["WSJ_BE_MR"] or None,
+    },
+}, indent=2))
+PY
 }
 
 # Clickable green link for a URL. Terminal-only; plain text otherwise.

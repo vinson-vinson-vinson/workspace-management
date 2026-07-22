@@ -46,14 +46,6 @@ _ws_name_link() {
 }
 
 # Render a truecolor filled circle for a hex color (#RRGGBB), only on a terminal.
-_ws_swatch() {
-  local hex="${1#\#}"
-  [[ ${#hex} -eq 6 ]] || return 0
-  "$TTY" || return 0
-  local r=$((16#${hex:0:2})) g=$((16#${hex:2:2})) b=$((16#${hex:4:2}))
-  printf '\033[38;2;%d;%d;%dm●\033[0m' "$r" "$g" "$b"
-}
-
 # Echo a repo's current branch, or empty if none/detached.
 _ws_repo_branch() {
   local repo="$1"

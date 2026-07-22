@@ -10,18 +10,17 @@ when a release is tagged.
 ## [Unreleased]
 
 ### Added
-- `ws status [SLUG]`: a workspace health report — branch and git state per repo,
-  whether it is served, dev-server liveness per app, and dependencies
-  (node_modules, vendor, the Cognitor key, the per-workspace test DB), a link
-  to its open merge request per repo, and — when `TASK_URL_TEMPLATE` is set — a
-  link to its tracker task. With no SLUG it reports the workspace you are
-  standing in; from anywhere else it falls back to a one-line-per-workspace
-  overview, which `--all` forces. Everything but the MR link is local, so the
-  default report is ~0.5s; MR lookups are a glab network call and only run
-  under `--mr`.
-  The test-DB row distinguishes "missing" from "can't check" — bad credentials
-  or a stopped MySQL report `? unavailable`, since the fix for that is nothing
-  like creating the database.
+- `ws status [SLUG]`: a workspace health report styled to match `ws list` and
+  `ws serve` — the workspace's own accent swatch over the brand gradient rule,
+  then a frontend and a backend block. Each shows branch, git state, and its
+  running servers: the served apps' dev-server liveness on the frontend, the
+  Horizon queue worker on the backend. Only served apps appear (no more
+  panels/outlook noise), and dependency checks (node_modules, vendor, cognitor
+  key, test DB) move to `--json`, which emits the full machine-readable report.
+  With no SLUG it reports the workspace you're in; from anywhere else a
+  one-line-per-workspace overview, which `--all` forces. MR links per repo are
+  a network call, so they're behind `--mr`; `TASK_URL_TEMPLATE` adds a tracker
+  link. The default report is local and ~0.5s.
 
 ## [2.5.0] — 2026-07-21
 

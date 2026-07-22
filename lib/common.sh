@@ -64,6 +64,22 @@ ws_grad() {
   printf '%s' "$C_RESET"
 }
 
+# Truecolor SGR for a #rrggbb accent, or nothing (non-TTY / bad hex). The raw
+# escape, so callers can wrap any text — e.g. a section bar — in the colour.
+_accent_seq() {
+  local hex="${1#\#}"
+  [[ ${#hex} -eq 6 ]] || return 0
+  "$TTY" || return 0
+  printf '\033[38;2;%d;%d;%dm' "$((16#${hex:0:2}))" "$((16#${hex:2:2}))" "$((16#${hex:4:2}))"
+}
+
+# A filled circle in a workspace's accent colour (from its #rrggbb), or nothing.
+_ws_swatch() {
+  local seq; seq="$(_accent_seq "$1")"
+  [[ -n "$seq" ]] || return 0
+  printf '%s●%s' "$seq" "$C_RESET"
+}
+
 # Echo char $1 repeated $2 times (bash-3.2 safe).
 ws_rule() {
   local ch="$1" n="$2" i out=""

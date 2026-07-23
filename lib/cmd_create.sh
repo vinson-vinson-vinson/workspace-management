@@ -8,7 +8,7 @@
 cmd_create_usage() {
   cat <<'USAGE'
 Usage:
-  ws create <NAME_OR_TASK_AND_NAME> [BASE_BRANCH] [-n|--neanderthal] [--dry-run]
+  ws create <NAME_OR_TASK_AND_NAME> [BASE_BRANCH[@REMOTE]] [-n|--neanderthal] [--dry-run]
 
 Rules:
   - With task:    CU-<taskId>_<feature-name>  -> slug/branch CU-<taskId>_<feature-name>
@@ -18,6 +18,11 @@ Rules:
     still in review. Applied per repo where the branch exists (locally or on
     origin); a repo without it falls back to its configured base, with a
     warning. Missing in both repos is an error.
+  - BASE_BRANCH@REMOTE takes the branch from that git remote instead of
+    origin — e.g. a bot branch pushed to a fork. The suffix is only treated
+    as a remote when a remote of that name is configured in one of the repos;
+    the branch is fetched from it and the new branches are cut from
+    <REMOTE>/<BASE_BRANCH>.
   - The workspace opens automatically in the IDE(s) named by FRONTEND_IDE /
     BACKEND_IDE in config.sh (disable with NO_OPEN_AFTER_CREATE=true). When
     that is VS Code, it also starts one terminal running `ws serve`, and when
@@ -32,6 +37,7 @@ Options:
 Examples:
   ws create CU-1234_Test-Project
   ws create CU-5678_follow-up CU-1234_Test-Project
+  ws create form-timing cursor/delayed-legal-documents-df2a@github
   ws create MyNewProject --neanderthal
   ws create CU-1234_Test-Project --dry-run
 USAGE
@@ -63,7 +69,18 @@ slugify_name() {
 }
 
 resolve_base_ref() {
-  local repo="$1" branch="$2"
+  local repo="$1" branch="$2" remote="${3:-}"
+  # Explicit BASE_BRANCH@REMOTE: the user named the remote, so only its
+  # (freshly fetched) remote-tracking ref counts — no local fallback.
+  if [[ -n "$remote" ]]; then
+    if git -C "$repo" show-ref --verify --quiet "refs/remotes/$remote/$branch"; then
+      printf '%s/%s' "$remote" "$branch"; return
+    fi
+    # Dry-run skipped the fetch that would have created this ref; the branch's
+    # existence on the remote was already verified via ls-remote.
+    if "$DRY_RUN"; then printf '%s/%s' "$remote" "$branch"; return; fi
+    err "Base branch '$branch' not found on remote '$remote' in $repo"; exit 1
+  fi
   # USE_REMOTE_MAIN flips the preference: base on origin/<branch> (freshly
   # fetched by cmd_create) instead of the local checkout, falling back to the
   # local branch only when no remote-tracking ref exists.
@@ -87,14 +104,19 @@ branch_exists_local() {
   git -C "$1" show-ref --verify --quiet "refs/heads/$2"
 }
 
-# Read-only check whether a branch exists on origin. Uses the already-fetched
-# remote-tracking ref first, then a network query that mutates nothing locally.
+# Read-only check whether a branch exists on a remote (default origin). Uses
+# the already-fetched remote-tracking ref first, then a network query that
+# mutates nothing locally.
 remote_branch_exists() {
-  local repo="$1" branch="$2"
-  if git -C "$repo" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
+  local repo="$1" branch="$2" remote="${3:-origin}"
+  if git -C "$repo" show-ref --verify --quiet "refs/remotes/$remote/$branch"; then
     return 0
   fi
-  git -C "$repo" ls-remote --heads --exit-code origin "$branch" >/dev/null 2>&1
+  git -C "$repo" ls-remote --heads --exit-code "$remote" "$branch" >/dev/null 2>&1
+}
+
+remote_exists() {
+  git -C "$1" remote get-url "$2" >/dev/null 2>&1
 }
 
 # True if BRANCH exists in REPO at all — locally or on origin.
@@ -339,6 +361,17 @@ cmd_create() {
   combined="${positional[0]}"
   BASE_OVERRIDE="${positional[1]:-}"
 
+  # Optional BASE_BRANCH@REMOTE form: split on the LAST '@'. Deferred remote
+  # validation (below, after require_repo) decides whether the suffix really
+  # names a remote — branch names may legitimately contain '@'.
+  local BASE_REMOTE=""
+  if [[ "$BASE_OVERRIDE" == *@* ]]; then
+    BASE_REMOTE="${BASE_OVERRIDE##*@}"
+    if [[ -z "$BASE_REMOTE" || -z "${BASE_OVERRIDE%@*}" ]]; then
+      err "Invalid BASE_BRANCH@REMOTE: '$BASE_OVERRIDE'"; exit 1
+    fi
+  fi
+
   # One-argument task form: <PREFIX>-1234_MyProject (prefix case-insensitive).
   local combined_lc
   combined_lc="$(printf '%s' "$combined" | tr '[:upper:]' '[:lower:]')"
@@ -376,7 +409,35 @@ cmd_create() {
   # instead of the configured base — per repo, since a feature branch may only
   # exist in one of them (the other keeps its configured base).
   local fe_base="$FRONTEND_BASE_BRANCH" be_base="$BACKEND_BASE_BRANCH"
-  if [[ -n "$BASE_OVERRIDE" ]]; then
+  # Non-empty = base that repo on <remote>/<branch> from an explicit @REMOTE.
+  local fe_base_remote="" be_base_remote=""
+  # The '@' suffix only counts as a remote if a remote of that name is
+  # configured in at least one repo; otherwise it's part of the branch name.
+  if [[ -n "$BASE_REMOTE" ]]; then
+    if remote_exists "$FRONTEND_REPO" "$BASE_REMOTE" || remote_exists "$BACKEND_REPO" "$BASE_REMOTE"; then
+      BASE_OVERRIDE="${BASE_OVERRIDE%@*}"
+    else
+      vlog "No remote '$BASE_REMOTE' in either repo — treating '$BASE_OVERRIDE' as a branch name."
+      BASE_REMOTE=""
+    fi
+  fi
+  if [[ -n "$BASE_OVERRIDE" && -n "$BASE_REMOTE" ]]; then
+    local fe_has=false be_has=false
+    remote_exists "$FRONTEND_REPO" "$BASE_REMOTE" \
+      && remote_branch_exists "$FRONTEND_REPO" "$BASE_OVERRIDE" "$BASE_REMOTE" && fe_has=true
+    remote_exists "$BACKEND_REPO" "$BASE_REMOTE" \
+      && remote_branch_exists "$BACKEND_REPO" "$BASE_OVERRIDE" "$BASE_REMOTE" && be_has=true
+    if ! "$fe_has" && ! "$be_has"; then
+      err "Base branch '$BASE_OVERRIDE' not found on remote '$BASE_REMOTE' in either repo."
+      exit 1
+    fi
+    if "$fe_has"; then fe_base="$BASE_OVERRIDE"; fe_base_remote="$BASE_REMOTE"; else
+      warn "'$BASE_REMOTE/$BASE_OVERRIDE' not found in $FRONTEND_DIR_NAME — using '$fe_base' there."
+    fi
+    if "$be_has"; then be_base="$BASE_OVERRIDE"; be_base_remote="$BASE_REMOTE"; else
+      warn "'$BASE_REMOTE/$BASE_OVERRIDE' not found in $BACKEND_DIR_NAME — using '$be_base' there."
+    fi
+  elif [[ -n "$BASE_OVERRIDE" ]]; then
     local fe_has=false be_has=false
     branch_available "$FRONTEND_REPO" "$BASE_OVERRIDE" && fe_has=true
     branch_available "$BACKEND_REPO" "$BASE_OVERRIDE" && be_has=true
@@ -395,22 +456,27 @@ cmd_create() {
   # USE_REMOTE_MAIN promises the LIVE remote: refresh the remote-tracking refs
   # first, or origin/<base-branch> would just mean "as of the last fetch". A
   # failed fetch (e.g. offline) degrades to that last-fetched state with a
-  # warning rather than aborting.
-  if "$USE_REMOTE_MAIN"; then
+  # warning rather than aborting. An explicit @REMOTE base is always fetched —
+  # its remote-tracking ref may not exist locally at all yet.
+  local fe_fetch=false be_fetch=false
+  "$USE_REMOTE_MAIN" && { fe_fetch=true; be_fetch=true; }
+  [[ -n "$fe_base_remote" ]] && fe_fetch=true
+  [[ -n "$be_base_remote" ]] && be_fetch=true
+  if "$fe_fetch" || "$be_fetch"; then
     local fetch_ok=true
-    spin "fetching origin base branches"
-    run_quiet git -C "$FRONTEND_REPO" fetch origin "$fe_base" || fetch_ok=false
-    run_quiet git -C "$BACKEND_REPO" fetch origin "$be_base" || fetch_ok=false
+    spin "fetching base branches"
+    ! "$fe_fetch" || run_quiet git -C "$FRONTEND_REPO" fetch "${fe_base_remote:-origin}" "$fe_base" || fetch_ok=false
+    ! "$be_fetch" || run_quiet git -C "$BACKEND_REPO" fetch "${be_base_remote:-origin}" "$be_base" || fetch_ok=false
     if "$fetch_ok"; then
-      spin_ok "origin base branches fetched"
+      spin_ok "base branches fetched"
     else
       spin_stop
-      warn "fetch failed — branching from the last-fetched origin state instead."
+      warn "fetch failed — branching from the last-fetched remote state instead."
     fi
   fi
 
-  frontend_ref="$(resolve_base_ref "$FRONTEND_REPO" "$fe_base")"
-  backend_ref="$(resolve_base_ref "$BACKEND_REPO" "$be_base")"
+  frontend_ref="$(resolve_base_ref "$FRONTEND_REPO" "$fe_base" "$fe_base_remote")"
+  backend_ref="$(resolve_base_ref "$BACKEND_REPO" "$be_base" "$be_base_remote")"
 
   vlog "Session slug: $branch_slug"
   vlog "Frontend worktree: $frontend_worktree"

@@ -96,6 +96,26 @@ set_env_var() {
   fi
 }
 
+# Prepend the per-workspace prefix to the app's STORAGE_PREFIX (the env the
+# anny-ui apps use to namespace their cookies and localStorage). All workspaces
+# share the parent cookie domain, so without this a login/session cookie from
+# one workspace clobbers the same-named cookie of main and of every other
+# workspace. The app's own prefix is KEPT (admin/shop/… stay distinct) and the
+# workspace part goes in front: bookings_admin_ -> cu_1234_bookings_admin_.
+# Idempotent: a value that already starts with the workspace prefix is left
+# alone, so the kept-env path can re-pin it on every run like HOST/PORT.
+WS_STORAGE_PREFIX=""   # set in cmd_serve, derived from the subdomain
+
+apply_storage_prefix() {
+  local file="$1" base
+  # `|| true` because a missing STORAGE_PREFIX line is fine (base stays empty)
+  # but would otherwise abort the whole serve under `set -euo pipefail`.
+  base="$(grep -E '^STORAGE_PREFIX=' "$file" 2>/dev/null | tail -1 | cut -d= -f2- || true)"
+  base="${base//\"/}"; base="${base//\'/}"
+  [[ "$base" == "$WS_STORAGE_PREFIX"* ]] && return 0
+  set_env_var "$file" STORAGE_PREFIX "${WS_STORAGE_PREFIX}${base}"
+}
+
 # --------------------------- env preparation --------------------------------
 # Copy the ENTIRE main env, then rewrite the self-domain and dev-server port.
 # Shared infra (socket.anny.dev, cognitor.dev, anny.co, DB, APP_KEY, mail, …) is
@@ -120,8 +140,17 @@ prepare_frontend_env() {
     # and the dev server logs look perfect on the wrong port. Anything that
     # drops a .env here before serve runs (an editor, a worktree hook, an
     # earlier checkout) otherwise pins the port to whatever main uses.
+    if "$DRY_RUN"; then
+      printf '[dry-run] keep %s ; re-pin HOST/PORT=%s ; ensure STORAGE_PREFIX starts with %s\n' \
+        "$wt_env" "$port" "$WS_STORAGE_PREFIX"
+      return 0
+    fi
     set_env_var "$wt_env" HOST "127.0.0.1"
     set_env_var "$wt_env" PORT "$port"
+    # Same reasoning as HOST/PORT: a kept env carrying main's STORAGE_PREFIX
+    # silently shares cookies with main — invisible until a login in one
+    # window logs the other out.
+    apply_storage_prefix "$wt_env"
     vlog "Frontend env already present: $dir/.env (kept; HOST/PORT re-pinned to $port)."
     return 0
   fi
@@ -131,12 +160,14 @@ prepare_frontend_env() {
     warn "$dir has no .env; falling back to .env.example."
   fi
   if "$DRY_RUN"; then
-    printf '[dry-run] cp %s %s ; set PORT=%s ; rewrite host -> %s\n' "$main_env" "$wt_env" "$port" "$host"
+    printf '[dry-run] cp %s %s ; set PORT=%s ; rewrite host -> %s ; prefix STORAGE_PREFIX with %s\n' \
+      "$main_env" "$wt_env" "$port" "$host" "$WS_STORAGE_PREFIX"
     return 0
   fi
   cp "$main_env" "$wt_env"
   set_env_var "$wt_env" HOST "127.0.0.1"
   set_env_var "$wt_env" PORT "$port"
+  apply_storage_prefix "$wt_env"
   sed -i '' -E "/^ECHO_HOST_URL=/!s#https://${BASE_DOMAIN_RE}#https://${host}#g" "$wt_env"
   vlog "Frontend env ready: $dir (.env, PORT=$port, host=$host)"
   return 0
@@ -720,6 +751,11 @@ cmd_serve() {
   sub="$(resolve_subdomain "$slug")" \
     || { err "Refusing to serve '$slug': no DNS-safe characters to build a subdomain from."; exit 1; }
   host="${sub}.${BASE_DOMAIN}"
+
+  # Cookie/localStorage namespace for this workspace (see apply_storage_prefix).
+  # Underscores instead of the subdomain's hyphens, matching the apps' own
+  # prefix style: cu-1234 -> cu_1234_.
+  WS_STORAGE_PREFIX="${sub//-/_}_"
 
   session_dir="$WORKSPACES_ROOT/$slug"
   WT_FRONTEND="$session_dir/$FRONTEND_DIR_NAME"

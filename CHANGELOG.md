@@ -9,6 +9,8 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.7.0] — 2026-07-23
+
 ### Added
 - `ws mr [SLUG] [--fe|--be|--all] [--target <branch>]`: for each repo of a
   workspace, open its GitLab merge request or create a draft — but only where
@@ -327,7 +329,8 @@ the identity change.
   own `<sub>.anny.dev` subdomain via Laravel Valet/nginx, Cognitor key
   seeding, `install.sh`, and Homebrew tap packaging.
 
-[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.6.0...HEAD
+[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.7.0...HEAD
+[2.7.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.6.0...v2.7.0
 [2.6.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.5.0...v2.6.0
 [2.5.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.3.0...v2.4.0

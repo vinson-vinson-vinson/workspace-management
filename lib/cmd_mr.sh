@@ -41,8 +41,13 @@ USAGE
 _mr_title() {
   local branch="$1" id="" rest="$1" head
   head="${branch%%_*}"
-  if [[ "$branch" == *_* ]] && printf '%s' "$head" | grep -qE '^[A-Za-z]+-[0-9]+$'; then
-    id="$(printf '%s' "$head" | tr '[:lower:]' '[:upper:]')"
+  # Task id = <prefix>-<id>. The id is alphanumeric — ClickUp's are hashes like
+  # 86cath6g5, not just digits — so match [A-Za-z0-9]+, not [0-9]+. Uppercase
+  # only the prefix (cu -> CU); the id keeps its own case, since a ClickUp hash
+  # read shouted (86CATH6G5) is wrong.
+  if [[ "$branch" == *_* ]] && printf '%s' "$head" | grep -qE '^[A-Za-z]+-[A-Za-z0-9]+$'; then
+    local pfx="${head%%-*}" idpart="${head#*-}"
+    id="$(printf '%s' "$pfx" | tr '[:lower:]' '[:upper:]')-${idpart}"
     rest="${branch#*_}"
   fi
   local words out="" w first

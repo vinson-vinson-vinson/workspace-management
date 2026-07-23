@@ -9,6 +9,15 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.8.1] — 2026-07-23
+
+### Changed
+- `ws remove` reports worktree teardown as one step per repo ("removing
+  frontend worktree (anny-ui)", then backend) instead of a single combined
+  step. Removing a served worktree deletes its cloned `vendor/` and installed
+  `node_modules/`, so the old single step could sit silent for seconds and
+  read as stuck.
+
 ## [2.8.0] — 2026-07-23
 
 ### Added
@@ -338,7 +347,8 @@ the identity change.
   own `<sub>.anny.dev` subdomain via Laravel Valet/nginx, Cognitor key
   seeding, `install.sh`, and Homebrew tap packaging.
 
-[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.8.0...HEAD
+[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.8.1...HEAD
+[2.8.1]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.8.0...v2.8.1
 [2.8.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.6.0...v2.7.0
 [2.6.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.5.0...v2.6.0

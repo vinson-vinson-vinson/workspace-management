@@ -299,10 +299,16 @@ cmd_remove() {
   run_quiet git -C "$FRONTEND_REPO" worktree prune
   run_quiet git -C "$BACKEND_REPO" worktree prune
 
-  spin "removing worktrees"
+  # One step per worktree: removing a served worktree deletes its cloned
+  # vendor/ and installed node_modules/ (tens of thousands of files), so a
+  # single combined step sits silent for seconds and reads as stuck.
+  spin "removing frontend worktree ($FRONTEND_DIR_NAME)"
   remove_worktree "$FRONTEND_REPO" "$frontend_worktree" "Frontend"
+  spin_ok "frontend worktree removed ($FRONTEND_DIR_NAME)"
+
+  spin "removing backend worktree ($BACKEND_DIR_NAME)"
   remove_worktree "$BACKEND_REPO" "$backend_worktree" "Backend"
-  spin_ok "worktrees removed"
+  spin_ok "backend worktree removed ($BACKEND_DIR_NAME)"
 
   spin "deleting branches"
   remove_local_branch "$FRONTEND_REPO" "$slug" "frontend"

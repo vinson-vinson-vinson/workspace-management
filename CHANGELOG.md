@@ -9,6 +9,15 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.8.0] — 2026-07-23
+
+### Added
+- `ws mr`: `MR_ASSIGNEE` config sets a default GitLab assignee (a username or
+  comma-separated list) for newly created MRs, via `glab mr create --assignee`.
+  Empty by default; existing MRs are left untouched.
+- `ws mr --nd`: create the MR ready for review instead of as a draft (the
+  default stays draft).
+
 ## [2.7.0] — 2026-07-23
 
 ### Added
@@ -329,7 +338,8 @@ the identity change.
   own `<sub>.anny.dev` subdomain via Laravel Valet/nginx, Cognitor key
   seeding, `install.sh`, and Homebrew tap packaging.
 
-[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.7.0...HEAD
+[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.8.0...HEAD
+[2.8.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.6.0...v2.7.0
 [2.6.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.5.0...v2.6.0
 [2.5.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.4.0...v2.5.0

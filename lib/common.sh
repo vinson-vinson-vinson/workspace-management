@@ -7,7 +7,7 @@
 # being set before it is sourced.
 # -----------------------------------------------------------------------------
 
-WSM_VERSION="2.7.0"
+WSM_VERSION="2.8.0"
 
 # Sudoers drop-in installed by `ws trust` (NOPASSWD for the exact nginx
 # commands `ws serve` runs). Shared: trust writes it, serve checks for it.
@@ -283,6 +283,11 @@ load_config() {
   # task slug. Empty (default) = no task link. e.g. ClickUp:
   # "https://app.clickup.com/t/{id}".
   TASK_URL_TEMPLATE="${TASK_URL_TEMPLATE:-}"
+  # Default assignee for MRs created by `ws mr` — a GitLab username (or a
+  # comma-separated list) passed to `glab mr create --assignee`. Empty
+  # (default) = don't assign. Only applies to freshly created MRs, not ones
+  # that already exist.
+  MR_ASSIGNEE="${MR_ASSIGNEE:-}"
   TEST_DB_ENABLED="${TEST_DB_ENABLED:-true}"
   TEST_DB_PREFIX="${TEST_DB_PREFIX:-anny_bookings_test}"
   TEST_DB_HOST="${TEST_DB_HOST:-127.0.0.1}"

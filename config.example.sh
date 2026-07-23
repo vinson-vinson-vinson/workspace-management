@@ -58,6 +58,12 @@ TASK_ID_PREFIX="CU"
 # TASK_URL_TEMPLATE="https://app.clickup.com/t/{id}"
 TASK_URL_TEMPLATE=""
 
+# Default assignee for MRs created by `ws mr`: a GitLab username (or a
+# comma-separated list) handed to `glab mr create --assignee`. Empty = don't
+# assign. Applies only to newly created MRs, not ones that already exist.
+# e.g. MR_ASSIGNEE="vinson.mick"
+MR_ASSIGNEE=""
+
 # IDE used to open workspaces, per repo role. Allowed values: vscode (the
 # default), phpstorm, webstorm, zed. With the SAME value on both sides,
 # `ws open` / `ws create` open the workspace combined in ONE window (vscode:

@@ -8,7 +8,7 @@
 cmd_mr_usage() {
   cat <<'USAGE'
 Usage:
-  ws mr [SLUG] [--fe | --be | --all] [--target <branch>] [--dry-run]
+  ws mr [SLUG] [--fe | --be | --all] [--target <branch>] [--nd] [--dry-run]
 
 For each repo of a workspace, open its merge request if one exists, or create a
 draft — but only when the branch has commits the target doesn't. A repo with
@@ -26,12 +26,15 @@ Options:
                 Target branch for the MR. Defaults per repo to the base branch
                 it was cut from (FRONTEND_BASE_BRANCH / BACKEND_BASE_BRANCH,
                 both "main" out of the box).
+      --nd      No-draft: create the MR ready for review, not as a draft.
       --dry-run Print what would happen without pushing or touching GitLab.
   -h, --help    Show this help.
 
 The MR title is derived from the branch name:
   CU-1234_fix-login  ->  "CU-1234: Fix login"
   experiment         ->  "Experiment"
+
+Set MR_ASSIGNEE in config.sh to a GitLab username to auto-assign new MRs.
 USAGE
 }
 
@@ -91,8 +94,10 @@ _mr_for_repo() {
   local title; title="$(_mr_title "$branch")"
 
   if "$DRY_RUN"; then
+    local kind="draft MR"; "$NO_DRAFT" && kind="MR"
     printf '[dry-run] %s: %s commit(s) ahead of %s\n' "$label" "$ahead" "$target"
-    printf '[dry-run]   push %s, then MR "%s" -> %s\n' "$branch" "$title" "$target"
+    printf '[dry-run]   push %s, then %s "%s" -> %s\n' "$branch" "$kind" "$title" "$target"
+    [[ -n "$MR_ASSIGNEE" ]] && printf '[dry-run]   assignee: %s\n' "$MR_ASSIGNEE"
     return 0
   fi
 
@@ -120,21 +125,30 @@ _mr_for_repo() {
     return 0
   fi
 
-  log "$label: creating draft MR -> $target"
+  # Draft by default; --nd (NO_DRAFT) opens it ready for review instead.
+  local kind="draft MR"; "$NO_DRAFT" && kind="MR"
+  log "$label: creating $kind -> $target"
+  # Build the optional flags as an array so an unset one adds nothing rather
+  # than a stray empty argument: --draft (unless --nd) and --assignee.
+  local -a extra=()
+  "$NO_DRAFT" || extra+=(--draft)
+  [[ -n "$MR_ASSIGNEE" ]] && extra+=(--assignee "$MR_ASSIGNEE")
   local out
-  out="$( cd "$worktree" && glab mr create --draft --yes --fill \
-      --source-branch "$branch" --target-branch "$target" --title "$title" 2>&1 )" || {
+  out="$( cd "$worktree" && glab mr create --yes --fill \
+      --source-branch "$branch" --target-branch "$target" --title "$title" \
+      ${extra[@]+"${extra[@]}"} 2>&1 )" || {
     err "$label: glab mr create failed:"
     printf '%s\n' "$out" | sed 's/^/    /' >&2
     return 1
   }
   url="$(printf '%s\n' "$out" | grep -oE 'https://[^ ]+/merge_requests/[0-9]+' | head -1)"
-  ok "$label: draft MR created -> $target"
+  ok "$label: $kind created -> $target"
   [[ -n "$url" ]] && { printf '    %s\n' "$url"; open "$url"; }
 }
 
 cmd_mr() {
   DRY_RUN=false
+  NO_DRAFT=false
   local fe=false be=false target="" slug=""
 
   while [[ $# -gt 0 ]]; do
@@ -143,6 +157,7 @@ cmd_mr() {
       --be)       be=true; shift ;;
       --all)      fe=true; be=true; shift ;;
       --target)   target="${2:-}"; [[ -n "$target" ]] || { err "--target needs a branch"; exit 1; }; shift 2 ;;
+      --nd)       NO_DRAFT=true; shift ;;
       --dry-run)  DRY_RUN=true; shift ;;
       -h|--help)  cmd_mr_usage; exit 0 ;;
       -*) err "Unknown option: $1"; cmd_mr_usage; exit 1 ;;

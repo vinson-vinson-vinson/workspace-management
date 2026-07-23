@@ -9,6 +9,18 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.9.0] — 2026-07-23
+
+### Added
+- `ws create <slug> [BASE_BRANCH@REMOTE]`: the optional base argument now
+  accepts `branch@remote` to cut the new worktree branches from a branch on a
+  non-origin remote (e.g. a bot branch pushed to a fork). The `@` suffix is
+  only treated as a remote when a remote of that name is configured in one of
+  the repos, so branch names containing `@` keep working. An explicit
+  `@REMOTE` base is always fetched first and resolved strictly to
+  `<remote>/<branch>`, applied per repo, falling back to the configured base
+  (with a warning) in a repo where the branch doesn't exist.
+
 ## [2.8.1] — 2026-07-23
 
 ### Changed
@@ -347,7 +359,8 @@ the identity change.
   own `<sub>.anny.dev` subdomain via Laravel Valet/nginx, Cognitor key
   seeding, `install.sh`, and Homebrew tap packaging.
 
-[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.8.1...HEAD
+[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.9.0...HEAD
+[2.9.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.8.1...v2.9.0
 [2.8.1]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.8.0...v2.8.1
 [2.8.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.6.0...v2.7.0

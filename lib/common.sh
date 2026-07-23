@@ -7,7 +7,7 @@
 # being set before it is sourced.
 # -----------------------------------------------------------------------------
 
-WSM_VERSION="2.8.1"
+WSM_VERSION="2.9.0"
 
 # Sudoers drop-in installed by `ws trust` (NOPASSWD for the exact nginx
 # commands `ws serve` runs). Shared: trust writes it, serve checks for it.

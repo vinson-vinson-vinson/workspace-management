@@ -535,6 +535,13 @@ setup_dependencies() {
   # own JS deps (mjml for mails; chokidar, which `artisan horizon:watch` dies
   # without). Warn-only when main has none — the app boots fine without them,
   # only horizon:watch / mail rendering need it, so don't fail the whole serve.
+  #
+  # -L && ! -e: heal a dangling node_modules symlink first, same as vendor — an
+  # -e-only check is false for a dangling link and would make cp write through it.
+  if [[ -L "$WT_BACKEND/node_modules" && ! -e "$WT_BACKEND/node_modules" ]]; then
+    warn "Backend node_modules is a dangling symlink ($(readlink "$WT_BACKEND/node_modules")) — replacing it with a real clone."
+    run_cmd rm -f "$WT_BACKEND/node_modules"
+  fi
   if [[ -e "$WT_BACKEND/node_modules" ]]; then
     vlog "Backend node_modules already present in worktree (skipping)."
   elif "$DRY_RUN"; then
@@ -560,7 +567,18 @@ setup_dependencies() {
   # A yarn failure is a WARNING, not a hard abort: the backend is already set up
   # by this point, so a flaky registry shouldn't tear down the rest of serve.
   # Say so loudly instead — a half-installed frontend is easy to finish by hand.
-  if [[ -d "$WT_FRONTEND/node_modules" ]]; then
+  # A frontend node_modules must be a REAL directory. A symlink — e.g. pointed
+  # at the main clone to "save time" — makes stack traces resolve back to main,
+  # couples the worktree to it, and can leave nuxi/vite unable to resolve, so
+  # the worktree won't serve at all. Catch ANY symlink with -L, not just a
+  # dangling one: -d follows a valid link and would silently skip the install,
+  # which is exactly how a symlinked node_modules slips through. Heal it like
+  # vendor — remove it and let yarn do a real install below.
+  if [[ -L "$WT_FRONTEND/node_modules" ]]; then
+    warn "Frontend node_modules is a symlink ($(readlink "$WT_FRONTEND/node_modules")) — replacing it with a real install."
+    run_cmd rm -f "$WT_FRONTEND/node_modules"
+  fi
+  if [[ -d "$WT_FRONTEND/node_modules" && ! -L "$WT_FRONTEND/node_modules" ]]; then
     vlog "Frontend node_modules already present (skipping yarn — run 'yarn' in the worktree to refresh)."
   else
     vlog "Installing frontend dependencies with yarn (this can take a while)…"

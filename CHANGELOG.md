@@ -9,6 +9,22 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.9.1] — 2026-07-27
+
+### Fixed
+- `ws remove` accepts a `ws list` index (the # column), like `ws open` — so
+  `ws remove 3` works; `0`/`MAIN` are refused, out-of-range errors clearly.
+  Previously a number was treated as a literal slug: it "removed" a phantom
+  workspace and printed a full set of ✓ steps while touching nothing.
+- `ws remove` output is honest: a bogus slug now errors `Workspace not found`
+  instead of running the teardown over nothing, and each ✓ (worktree removed,
+  branches deleted) prints only when that step actually did something.
+- `ws serve` heals a symlinked frontend `node_modules` instead of trusting it:
+  the old `[[ -d ]]` check followed a symlink (e.g. pointed at the main clone),
+  skipped `yarn`, and left the worktree unservable. Any symlink is now replaced
+  with a real install. Gave the backend `node_modules` the same dangling-symlink
+  guard `vendor` already had, so all deps handlers are consistent.
+
 ## [2.9.0] — 2026-07-23
 
 ### Added
@@ -359,7 +375,8 @@ the identity change.
   own `<sub>.anny.dev` subdomain via Laravel Valet/nginx, Cognitor key
   seeding, `install.sh`, and Homebrew tap packaging.
 
-[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.9.0...HEAD
+[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.9.1...HEAD
+[2.9.1]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.9.0...v2.9.1
 [2.9.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.8.1...v2.9.0
 [2.8.1]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.8.0...v2.8.1
 [2.8.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.7.0...v2.8.0

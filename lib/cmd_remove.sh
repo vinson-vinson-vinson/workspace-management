@@ -161,10 +161,31 @@ confirm_removal() {
   esac
 }
 
+# True if anything belonging to this workspace actually exists — a session dir,
+# a registered worktree, a leftover local branch, or a workspace file. Guards
+# against "removing" a bogus slug (or a stray numeric arg) and printing a full
+# set of ✓ steps while touching nothing. Self-healing is preserved: a leftover
+# registration/branch/file still counts, so a half-deleted workspace is removable.
+remove_target_exists() {
+  local slug="$1" fe_wt="$2" be_wt="$3" wf="$4"
+  [[ -d "$WORKSPACES_ROOT/$slug" ]] && return 0
+  git -C "$FRONTEND_REPO" worktree list --porcelain 2>/dev/null | grep -Fqx "worktree $fe_wt" && return 0
+  git -C "$BACKEND_REPO"  worktree list --porcelain 2>/dev/null | grep -Fqx "worktree $be_wt" && return 0
+  git -C "$FRONTEND_REPO" show-ref --verify --quiet "refs/heads/$slug" && return 0
+  git -C "$BACKEND_REPO"  show-ref --verify --quiet "refs/heads/$slug" && return 0
+  [[ -n "$wf" && -f "$wf" ]] && return 0
+  [[ -f "$(legacy_workspace_file_for "$slug")" ]] && return 0
+  return 1
+}
+
+# Remove one repo's worktree. Returns 0 ONLY when a registered worktree was
+# actually removed, so the caller prints "✓ removed" only when it's true. A
+# missing / unregistered / failed removal returns 1 (with its own vlog/warn) —
+# the session-dir rm -rf and `git worktree prune` still finish the cleanup.
 remove_worktree() {
   local repo="$1" worktree_path="$2" label="$3"
   if [[ ! -d "$worktree_path" ]]; then
-    vlog "$label worktree does not exist. Skipping."; return 0
+    vlog "$label worktree does not exist. Skipping."; return 1
   fi
   if git -C "$repo" worktree list --porcelain | grep -Fqx "worktree $worktree_path"; then
     vlog "Removing $label worktree: $worktree_path"
@@ -173,23 +194,28 @@ remove_worktree() {
     # finish the cleanup if this can't.
     if "$FORCE"; then
       run_quiet git -C "$repo" worktree remove -f "$worktree_path" \
-        || warn "git worktree remove failed for $worktree_path; will clean up directly."
+        || { warn "git worktree remove failed for $worktree_path; will clean up directly."; return 1; }
     else
       run_quiet git -C "$repo" worktree remove "$worktree_path" \
-        || warn "git worktree remove failed for $worktree_path; retry with --force or push your work."
+        || { warn "git worktree remove failed for $worktree_path; retry with --force or push your work."; return 1; }
     fi
+    return 0
   else
     warn "$label path exists but is not a registered git worktree: $worktree_path"
     warn "Skipping git worktree removal. Directory will still be cleaned up."
+    return 1
   fi
 }
 
+# Delete one repo's local workspace branch. Returns 0 ONLY when a branch was
+# actually deleted, so the caller counts real deletions and doesn't claim
+# "branches deleted" when there were none (protected / absent / failed → 1).
 remove_local_branch() {
   local repo="$1" branch="$2" label="$3"
   # Never delete a protected base branch, even if its worktree was already gone.
   if is_protected_branch "$branch"; then
     warn "Refusing to delete protected base branch '$branch' in $label repo."
-    return 0
+    return 1
   fi
   if git -C "$repo" show-ref --verify --quiet "refs/heads/$branch"; then
     vlog "Deleting local $label branch: $branch"
@@ -197,9 +223,11 @@ remove_local_branch() {
     # the spinner's redrawn line. Non-fatal: a branch still pinned by some
     # worktree registration must not abort the rest of the teardown.
     run_quiet git -C "$repo" branch -D "$branch" \
-      || warn "Could not delete $label branch '$branch' — remove it manually (git branch -D $branch)."
+      || { warn "Could not delete $label branch '$branch' — remove it manually (git branch -D $branch)."; return 1; }
+    return 0
   else
     vlog "No local $label branch '$branch'. Skipping."
+    return 1
   fi
 }
 
@@ -225,6 +253,32 @@ cmd_remove() {
   fi
   [[ ${#positional[@]} -eq 1 ]] && slug="${positional[0]}"
 
+  # MAIN can never be removed — say so with a clear message rather than letting
+  # it fall through to "not found" (index 0 is handled in the numeric block).
+  if [[ "$slug" == "MAIN" || "$slug" == "main" ]]; then
+    err "Refusing to remove MAIN — the main checkout is protected."
+    exit 1
+  fi
+
+  # Accept a `ws list` index (the # column), like `ws open` does, so
+  # `ws remove 3` works. Resolve against the same fixed sequence `ws list`
+  # numbers; 0 is MAIN and is refused.
+  if [[ "$slug" =~ ^[0-9]+$ ]]; then
+    local n=$((10#$slug))     # 10# guards leading zeros ("08" -> not bad octal)
+    if (( n == 0 )); then
+      err "Refusing to remove MAIN (index 0) — the main checkout is protected."
+      exit 1
+    fi
+    local _slugs=() _line
+    while IFS= read -r _line; do _slugs+=("$_line"); done < <(workspace_slugs)
+    if (( n < 1 || n > ${#_slugs[@]} )); then
+      err "Index $n is out of range — 'ws list' shows ${#_slugs[@]} workspace(s) (0 = MAIN)."
+      exit 1
+    fi
+    slug="${_slugs[n - 1]}"
+    vlog "Resolved index $n -> $slug"
+  fi
+
   if [[ -z "$slug" ]]; then
     slug="$(slug_from_cwd)" || {
       err "Not inside a worktree directory and no slug provided."
@@ -245,6 +299,14 @@ cmd_remove() {
   vlog "Backend worktree: $backend_worktree"
   vlog "Workspace file: $workspace_file"
   vlog ""
+
+  # Nothing to remove? Fail loudly instead of running the whole teardown over a
+  # workspace that doesn't exist and printing a full set of ✓ steps that did
+  # nothing (the old behaviour for a bad slug / a numeric arg).
+  if ! remove_target_exists "$slug" "$frontend_worktree" "$backend_worktree" "$workspace_file"; then
+    err "Workspace not found: $slug (see 'ws list')."
+    exit 1
+  fi
 
   # SAFETY: bail out before touching anything if this is a main/base checkout.
   guard_not_main "$slug" "$frontend_worktree" "$backend_worktree"
@@ -302,18 +364,32 @@ cmd_remove() {
   # One step per worktree: removing a served worktree deletes its cloned
   # vendor/ and installed node_modules/ (tens of thousands of files), so a
   # single combined step sits silent for seconds and reads as stuck.
+  # Each ✓ is printed only when that worktree was actually removed — a worktree
+  # that was already gone or unregistered leaves its own vlog/warn and no ✓.
   spin "removing frontend worktree ($FRONTEND_DIR_NAME)"
-  remove_worktree "$FRONTEND_REPO" "$frontend_worktree" "Frontend"
-  spin_ok "frontend worktree removed ($FRONTEND_DIR_NAME)"
+  if remove_worktree "$FRONTEND_REPO" "$frontend_worktree" "Frontend"; then
+    spin_ok "frontend worktree removed ($FRONTEND_DIR_NAME)"
+  else
+    spin_stop
+  fi
 
   spin "removing backend worktree ($BACKEND_DIR_NAME)"
-  remove_worktree "$BACKEND_REPO" "$backend_worktree" "Backend"
-  spin_ok "backend worktree removed ($BACKEND_DIR_NAME)"
+  if remove_worktree "$BACKEND_REPO" "$backend_worktree" "Backend"; then
+    spin_ok "backend worktree removed ($BACKEND_DIR_NAME)"
+  else
+    spin_stop
+  fi
 
+  # Count real deletions so we only claim "branches deleted" when some were.
   spin "deleting branches"
-  remove_local_branch "$FRONTEND_REPO" "$slug" "frontend"
-  remove_local_branch "$BACKEND_REPO" "$slug" "backend"
-  spin_ok "branches deleted"
+  local branches_deleted=0
+  if remove_local_branch "$FRONTEND_REPO" "$slug" "frontend"; then branches_deleted=$((branches_deleted + 1)); fi
+  if remove_local_branch "$BACKEND_REPO" "$slug" "backend"; then branches_deleted=$((branches_deleted + 1)); fi
+  if (( branches_deleted > 0 )); then
+    spin_ok "branches deleted ($branches_deleted)"
+  else
+    spin_stop
+  fi
 
   # Deleting the session dir is the slow part: a served workspace holds a cloned
   # vendor and an installed node_modules — tens of thousands of small files.

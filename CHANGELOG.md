@@ -9,6 +9,23 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.10.0] — 2026-07-27
+
+### Added
+- `ws serve` prepends a per-workspace prefix (the subdomain, hyphens mapped to
+  underscores) to each app's `STORAGE_PREFIX`, so a workspace's cookies and
+  localStorage keys can't collide with main's or another workspace's on setups
+  that share the parent cookie domain — `bookings_admin_` -> `cu_1234_bookings_admin_`.
+  Applied on fresh envs and re-pinned on kept ones; idempotent. Existing
+  workspaces pick it up on their next `ws serve` (one re-login per workspace as
+  cookies move to the new names).
+
+### Fixed
+- `ws serve`: a missing `STORAGE_PREFIX` line no longer aborts the whole serve
+  under `set -euo pipefail` (guarded the `grep | tail | cut` lookup with `|| true`).
+- `ws serve --dry-run` no longer mutates worktree `.env` files — the kept-env
+  path used to re-pin HOST/PORT for real; it now prints a `[dry-run] keep …` line.
+
 ## [2.9.1] — 2026-07-27
 
 ### Fixed
@@ -375,7 +392,8 @@ the identity change.
   own `<sub>.anny.dev` subdomain via Laravel Valet/nginx, Cognitor key
   seeding, `install.sh`, and Homebrew tap packaging.
 
-[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.9.1...HEAD
+[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.10.0...HEAD
+[2.10.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.9.1...v2.10.0
 [2.9.1]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.9.0...v2.9.1
 [2.9.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.8.1...v2.9.0
 [2.8.1]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.8.0...v2.8.1

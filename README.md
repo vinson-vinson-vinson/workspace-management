@@ -161,6 +161,40 @@ client**, once:
    The existing URL is kept; the `*.` variant is added alongside it. Repeat for
    each client, using that client's own callback path.
 
+## Hooks
+
+Splice machine-specific steps into a command's lifecycle with **hooks** — small
+executable scripts the tool runs at a defined point. Today there's one event:
+
+| Event | When it runs |
+| --- | --- |
+| `pre-remove` | During `ws remove`, after you confirm and **before anything is deleted** (both worktrees still exist). A hook that exits non-zero **aborts** the removal, so nothing is lost. |
+
+Hooks live in `$WSM_HOOKS_DIR/<event>/` (default `hooks/` next to the command),
+which is **gitignored** — like `config.sh`, it's yours per machine. The repo
+ships templates under [`hooks.example/`](hooks.example/); copy them in and mark
+them executable to enable:
+
+```bash
+cp -R hooks.example/ hooks/
+chmod +x hooks/pre-remove/*.sh
+```
+
+Every executable file in the event dir runs in lexical order. Each is a normal
+process; `ws remove` exports the context it needs:
+
+| Variable | Meaning |
+| --- | --- |
+| `WS_SLUG` | The workspace slug being removed. |
+| `WS_SESSION_DIR` | The session directory. |
+| `WS_FRONTEND` / `WS_BACKEND` | The two worktree paths. |
+| `WS_FRONTEND_DIR_NAME` / `WS_BACKEND_DIR_NAME` | The repo directory names. |
+
+The shipped example, `pre-remove/backup-planning.sh`, copies a workspace's
+backend `planning/` directory to `~/Projects/ws_docs/<slug>/` before teardown so
+notes survive for later lookup (destination overridable with `WS_DOCS_DIR`).
+`ws remove --dry-run` lists the hooks it would run without executing them.
+
 ## Directory structure
 
 What lives where on disk once you're set up:

@@ -98,45 +98,6 @@ _ws_admin_url() {
   return 0
 }
 
-# Fill the wordmark gradient stops (WSM_GRAD_STOPS_*) from the CURRENT
-# workspaces' accent colors — the same #rrggbb `ws list` swatches each row and
-# the favicon rings use — in list order, so the banner fades through the colors
-# of the workspaces you actually have. Needs >=2 colored workspaces; otherwise
-# the stops stay empty and ws_grad uses the default pink→sky.
-_ws_load_workspace_gradient() {
-  "$TTY" || return 0
-  local slugs=() s hex
-  while IFS= read -r s; do slugs+=("$s"); done < <(workspace_slugs)
-  WSM_GRAD_STOPS_R=(); WSM_GRAD_STOPS_G=(); WSM_GRAD_STOPS_B=()
-  for s in ${slugs[@]+"${slugs[@]}"}; do
-    hex="$(_ws_color "$s")"; hex="${hex#\#}"
-    [[ ${#hex} -eq 6 ]] || continue
-    WSM_GRAD_STOPS_R+=($((16#${hex:0:2})))
-    WSM_GRAD_STOPS_G+=($((16#${hex:2:2})))
-    WSM_GRAD_STOPS_B+=($((16#${hex:4:2})))
-  done
-  (( ${#WSM_GRAD_STOPS_R[@]} >= 2 )) || { WSM_GRAD_STOPS_R=(); WSM_GRAD_STOPS_G=(); WSM_GRAD_STOPS_B=(); }
-}
-
-# Alternative source for the same banner stops: the tool's last 3 commits
-# (oldest→newest), so the banner shifts as new commits land. Not wired in right
-# now — swap the call in cmd_list to _ws_load_commit_gradient to use it.
-_ws_load_commit_gradient() {
-  "$TTY" || return 0
-  git -C "$WSM_HOME" rev-parse --git-dir >/dev/null 2>&1 || return 0
-  local hashes=() h hex
-  while IFS= read -r h; do hashes+=("$h"); done \
-    < <(git -C "$WSM_HOME" log -3 --reverse --format='%H' 2>/dev/null)
-  (( ${#hashes[@]} >= 2 )) || return 0
-  WSM_GRAD_STOPS_R=(); WSM_GRAD_STOPS_G=(); WSM_GRAD_STOPS_B=()
-  for h in "${hashes[@]}"; do
-    hex="${h:0:6}"
-    WSM_GRAD_STOPS_R+=($((16#${hex:0:2})))
-    WSM_GRAD_STOPS_G+=($((16#${hex:2:2})))
-    WSM_GRAD_STOPS_B+=($((16#${hex:4:2})))
-  done
-}
-
 cmd_list() {
   local quiet=false
   while [[ $# -gt 0 ]]; do
@@ -269,16 +230,8 @@ cmd_list() {
   # vertical borders. The banner centers the wordmark over that width, with
   # its gradient rules cascading out to both box edges.
   local box_w=$((idxw + wsw + urlw + 10))
-  # Banner gradient source (WS_BANNER_COLORS): ws-colors fades through the
-  # current workspaces' accents; recent-commits through this repo's last 3
-  # commits; static leaves the stops empty so ws_grad uses the pink→sky brand
-  # fade. ws-colors self-falls-back to static when <2 colored workspaces exist.
-  case "$WS_BANNER_COLORS" in
-    ws-colors)                       _ws_load_workspace_gradient ;;
-    recent-commits|"recent commits") _ws_load_commit_gradient ;;
-    static)                          : ;;
-    *) vlog "Unknown WS_BANNER_COLORS='$WS_BANNER_COLORS' — using static." ;;
-  esac
+  # Fade the banner per WS_BANNER_COLORS (ws-colors | recent-commits | static).
+  ws_load_banner_gradient
   wsm_banner 2 "$box_w"
 
   # Version tag, centered under the wordmark (which is itself centered on the

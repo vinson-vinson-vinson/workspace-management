@@ -9,6 +9,17 @@ when a release is tagged.
 
 ## [Unreleased]
 
+### Added
+- Lifecycle hooks: `ws remove` runs every executable in
+  `$WSM_HOOKS_DIR/pre-remove/` after you confirm and before it deletes anything
+  (both worktrees still present), so you can splice in machine-specific steps —
+  a failing hook aborts the teardown, so nothing is lost. The context is
+  exported (`WS_SLUG`, `WS_SESSION_DIR`, `WS_FRONTEND`, `WS_BACKEND`, and the
+  repo dir names); the hooks dir is gitignored like `config.sh`, with templates
+  under `hooks.example/` (including a `backup-planning.sh` that archives a
+  workspace's backend `planning/` before teardown). Each hook gets the usual
+  spinner/✓ step, with its own output shown under `-v` and on failure.
+
 ## [2.12.0] — 2026-07-27
 
 ### Added

@@ -82,6 +82,55 @@ ws_grad() {
   printf '%s' "$C_RESET"
 }
 
+# ------------------------ configurable gradient source ----------------------
+# Fill the gradient stops (WSM_GRAD_STOPS_*) from the CURRENT workspaces' accent
+# colors — the same #rrggbb `ws list` swatches each row — in list order. Needs
+# >=2 colored workspaces; otherwise the stops stay empty and ws_grad falls back
+# to the default pink→sky.
+_ws_load_workspace_gradient() {
+  "$TTY" || return 0
+  local slugs=() s hex
+  while IFS= read -r s; do slugs+=("$s"); done < <(workspace_slugs)
+  WSM_GRAD_STOPS_R=(); WSM_GRAD_STOPS_G=(); WSM_GRAD_STOPS_B=()
+  for s in ${slugs[@]+"${slugs[@]}"}; do
+    hex="$(_ws_color "$s")"; hex="${hex#\#}"
+    [[ ${#hex} -eq 6 ]] || continue
+    WSM_GRAD_STOPS_R+=($((16#${hex:0:2})))
+    WSM_GRAD_STOPS_G+=($((16#${hex:2:2})))
+    WSM_GRAD_STOPS_B+=($((16#${hex:4:2})))
+  done
+  (( ${#WSM_GRAD_STOPS_R[@]} >= 2 )) || { WSM_GRAD_STOPS_R=(); WSM_GRAD_STOPS_G=(); WSM_GRAD_STOPS_B=(); }
+}
+
+# Same stops, but from the tool's last 3 commits (oldest→newest), so the fade
+# shifts as new commits land.
+_ws_load_commit_gradient() {
+  "$TTY" || return 0
+  git -C "$WSM_HOME" rev-parse --git-dir >/dev/null 2>&1 || return 0
+  local hashes=() h hex
+  while IFS= read -r h; do hashes+=("$h"); done \
+    < <(git -C "$WSM_HOME" log -3 --reverse --format='%H' 2>/dev/null)
+  (( ${#hashes[@]} >= 2 )) || return 0
+  WSM_GRAD_STOPS_R=(); WSM_GRAD_STOPS_G=(); WSM_GRAD_STOPS_B=()
+  for h in "${hashes[@]}"; do
+    hex="${h:0:6}"
+    WSM_GRAD_STOPS_R+=($((16#${hex:0:2})))
+    WSM_GRAD_STOPS_G+=($((16#${hex:2:2})))
+    WSM_GRAD_STOPS_B+=($((16#${hex:4:2})))
+  done
+}
+
+# Point ws_grad at the source chosen by WS_BANNER_COLORS, for any gradient.
+# static leaves the stops empty, so ws_grad uses the default pink→sky.
+ws_load_banner_gradient() {
+  case "$WS_BANNER_COLORS" in
+    ws-colors)                       _ws_load_workspace_gradient ;;
+    recent-commits|"recent commits") _ws_load_commit_gradient ;;
+    static)                          : ;;
+    *) vlog "Unknown WS_BANNER_COLORS='$WS_BANNER_COLORS' — using static." ;;
+  esac
+}
+
 # Truecolor SGR for a #rrggbb accent, or nothing (non-TTY / bad hex). The raw
 # escape, so callers can wrap any text — e.g. a section bar — in the colour.
 _accent_seq() {
@@ -159,6 +208,40 @@ ok()   { printf '  %s✓%s %s\n' "$C_GREEN" "$C_RESET" "$*"; }
 vlog() { "$VERBOSE" && log "$@"; return 0; }
 err()  { printf '[%s] ERROR: %s\n' "$LOG_PREFIX" "$*" >&2; }
 warn() { printf '[%s] WARN: %s\n' "$LOG_PREFIX" "$*" >&2; }
+
+# ------------------------------- hooks --------------------------------------
+# Run every executable file in $WSM_HOOKS_DIR/<event>/ (lexical order) to let
+# you splice machine-specific steps into a command's lifecycle — e.g. a
+# `pre-remove` hook that archives docs before `ws remove` tears a workspace
+# down. The dir is gitignored (like config.sh); the repo ships templates under
+# hooks.example/. Callers export the context the hooks need (WS_SLUG, the
+# worktree paths, …) beforehand. Returns non-zero if any hook fails, so a
+# caller can abort; under --dry-run it only lists what would run.
+run_hooks() {
+  local event="$1" dir hook name rc=0 hrc
+  dir="$WSM_HOOKS_DIR/$event"
+  [[ -d "$dir" ]] || return 0
+  for hook in "$dir"/*; do
+    [[ -f "$hook" && -x "$hook" ]] || continue    # skip non-exec files (READMEs)
+    name="${hook##*/}"
+    if "${DRY_RUN:-false}"; then
+      printf '[dry-run] run %s hook: %s\n' "$event" "$hook"
+      continue
+    fi
+    # Spinner + ✓ like every other step. The hook's own stdout is hidden on
+    # success (run_quiet shows it under -v, and on failure where it's the error).
+    spin "$event hook: $name"
+    hrc=0; run_quiet "$hook" || hrc=$?
+    if (( hrc == 0 )); then
+      spin_ok "$event hook: $name"
+    else
+      spin_stop
+      warn "$event hook failed (exit $hrc): $hook"
+      rc=1
+    fi
+  done
+  return $rc
+}
 
 # ------------------------------- spinner ------------------------------------
 # Shows "<spinner> doing the thing" while a step runs, then replaces that line
@@ -285,6 +368,9 @@ load_config() {
   REQUIRE_CONFIRM_REMOVE="${REQUIRE_CONFIRM_REMOVE:-true}"
   # Banner gradient source for `ws list`: ws-colors | recent-commits | static.
   WS_BANNER_COLORS="${WS_BANNER_COLORS:-ws-colors}"
+  # Directory of custom lifecycle hooks (see run_hooks). Machine-specific, so it
+  # defaults next to the command and is gitignored, like config.sh.
+  WSM_HOOKS_DIR="${WSM_HOOKS_DIR:-$WSM_HOME/hooks}"
   MAIN_WORKSPACE_FILE="${MAIN_WORKSPACE_FILE:-}"
   SYNC_MAIN_WORKSPACE="${SYNC_MAIN_WORKSPACE:-true}"
   # IDE per repo role (see config.example.sh); defaulted and validated here so

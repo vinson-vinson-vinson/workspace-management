@@ -335,6 +335,17 @@ cmd_remove() {
 
   confirm_removal "$slug"
 
+  # Custom pre-remove steps run HERE — after confirmation, before anything is
+  # deleted, while both worktrees still exist (so a hook can copy files out of
+  # them, e.g. archive planning docs). A failing hook aborts the teardown so
+  # nothing is lost. The context is exported for the hook scripts.
+  export WS_SLUG="$slug" WS_SESSION_DIR="$session_dir" \
+         WS_FRONTEND="$frontend_worktree" WS_BACKEND="$backend_worktree" \
+         WS_FRONTEND_DIR_NAME="$FRONTEND_DIR_NAME" WS_BACKEND_DIR_NAME="$BACKEND_DIR_NAME" \
+         WS_DRY_RUN="$DRY_RUN"
+  run_hooks pre-remove \
+    || { err "Aborting: a pre-remove hook failed — nothing was deleted."; exit 1; }
+
   vlog "Removing workspace..."
 
   # Before routing: a launch config can exist without an nginx block, and

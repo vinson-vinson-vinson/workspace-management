@@ -1,6 +1,9 @@
 # Local, machine-specific configuration (copy config.example.sh -> config.sh)
 config.sh
 
+# Local, machine-specific lifecycle hooks (copy hooks.example/ -> hooks/)
+hooks/
+
 # Generated VS Code workspace files
 *.code-workspace
 

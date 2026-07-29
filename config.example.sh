@@ -95,6 +95,15 @@ NO_OPEN_AFTER_CREATE=false
 #   static          the fixed pink→sky brand fade, same as `ws help`.
 WS_BANNER_COLORS="ws-colors"
 
+# Directory of custom lifecycle hooks. `ws remove` runs every executable file in
+# <dir>/pre-remove/ after you confirm and before it deletes anything (both
+# worktrees still exist), exporting WS_SLUG, WS_SESSION_DIR, WS_FRONTEND,
+# WS_BACKEND (and *_DIR_NAME). A hook that exits non-zero aborts the removal.
+# Machine-specific, so it's gitignored like this file; copy the shipped
+# templates to enable them: cp -R hooks.example/ hooks/ && chmod +x hooks/**/*.
+# Optional; defaults to a `hooks/` dir next to the command.
+# WSM_HOOKS_DIR="$HOME/.config/workspace-management/hooks"
+
 # Set to true to cut new workspace branches from the LIVE remote base branch:
 # `ws create` fetches origin/<base-branch> in both repos first and branches
 # from that, so workspaces never start from a stale local main. With false

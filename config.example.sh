@@ -85,6 +85,16 @@ BACKEND_IDE="vscode"
 # (e.g. via the clickable name in `ws list`). Optional; defaults to false.
 NO_OPEN_AFTER_CREATE=false
 
+# Source of the `ws list` wordmark banner's gradient. Optional; one of:
+#   ws-colors       fade through your current workspaces' accent colors, in list
+#                   order — the banner reflects the workspaces you have (default).
+#                   Falls back to `static` until at least two colored workspaces
+#                   exist (a gradient needs two stops).
+#   recent-commits  fade through this repo's last 3 commit colors (first 6 hex of
+#                   each SHA), so the banner shifts as new commits land.
+#   static          the fixed pink→sky brand fade, same as `ws help`.
+WS_BANNER_COLORS="ws-colors"
+
 # Set to true to cut new workspace branches from the LIVE remote base branch:
 # `ws create` fetches origin/<base-branch> in both repos first and branches
 # from that, so workspaces never start from a stale local main. With false

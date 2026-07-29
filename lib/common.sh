@@ -7,7 +7,7 @@
 # being set before it is sourced.
 # -----------------------------------------------------------------------------
 
-WSM_VERSION="2.11.0"
+WSM_VERSION="2.12.0"
 
 # Sudoers drop-in installed by `ws trust` (NOPASSWD for the exact nginx
 # commands `ws serve` runs). Shared: trust writes it, serve checks for it.
@@ -32,6 +32,11 @@ fi
 WSM_GRAD_R1=255; WSM_GRAD_G1=113; WSM_GRAD_B1=206     # pink
 WSM_GRAD_R2=1;   WSM_GRAD_G2=205; WSM_GRAD_B2=254     # sky
 
+# Optional multi-stop override: when these parallel arrays hold >=2 colors,
+# ws_grad fades THROUGH them (stop0 -> stop1 -> …) instead of the pink->sky
+# pair above. Empty by default; `ws list` fills them from the last 3 commits.
+WSM_GRAD_STOPS_R=(); WSM_GRAD_STOPS_G=(); WSM_GRAD_STOPS_B=()
+
 # Per-char slicing of multibyte glyphs only works in a UTF-8 locale — under a
 # byte-oriented one (LC_ALL=C) ${#} counts bytes and we'd cut a glyph in half.
 # Probe with a single box-drawing char: 1 = char-wise, 3 = byte-wise.
@@ -54,11 +59,24 @@ ws_grad() {
   local n=${#text} i t r g b
   if ! "$TTY" || ! "$WS_UTF8"; then printf '%s' "$text"; return; fi
   (( ramp < 2 )) && ramp=2
+  local stops=${#WSM_GRAD_STOPS_R[@]} pos seg rem nxt
   for ((i = 0; i < n; i++)); do
     t=$i; (( t > ramp - 1 )) && t=$(( ramp - 1 ))
-    r=$(( WSM_GRAD_R1 + (WSM_GRAD_R2 - WSM_GRAD_R1) * t / (ramp - 1) ))
-    g=$(( WSM_GRAD_G1 + (WSM_GRAD_G2 - WSM_GRAD_G1) * t / (ramp - 1) ))
-    b=$(( WSM_GRAD_B1 + (WSM_GRAD_B2 - WSM_GRAD_B1) * t / (ramp - 1) ))
+    if (( stops >= 2 )); then
+      # Fade THROUGH the stop colors: map t (0..ramp-1) onto 0..stops-1 and
+      # blend the two nearest stops (same math as the commit-dot ribbon).
+      pos=$(( t * (stops - 1) ))
+      seg=$(( pos / (ramp - 1) ))
+      rem=$(( pos - seg * (ramp - 1) ))
+      nxt=$(( seg + 1 )); (( nxt > stops - 1 )) && nxt=$(( stops - 1 ))
+      r=$(( WSM_GRAD_STOPS_R[seg] + (WSM_GRAD_STOPS_R[nxt] - WSM_GRAD_STOPS_R[seg]) * rem / (ramp - 1) ))
+      g=$(( WSM_GRAD_STOPS_G[seg] + (WSM_GRAD_STOPS_G[nxt] - WSM_GRAD_STOPS_G[seg]) * rem / (ramp - 1) ))
+      b=$(( WSM_GRAD_STOPS_B[seg] + (WSM_GRAD_STOPS_B[nxt] - WSM_GRAD_STOPS_B[seg]) * rem / (ramp - 1) ))
+    else
+      r=$(( WSM_GRAD_R1 + (WSM_GRAD_R2 - WSM_GRAD_R1) * t / (ramp - 1) ))
+      g=$(( WSM_GRAD_G1 + (WSM_GRAD_G2 - WSM_GRAD_G1) * t / (ramp - 1) ))
+      b=$(( WSM_GRAD_B1 + (WSM_GRAD_B2 - WSM_GRAD_B1) * t / (ramp - 1) ))
+    fi
     printf '\033[1;38;2;%d;%d;%dm%s' "$r" "$g" "$b" "${text:i:1}"
   done
   printf '%s' "$C_RESET"
@@ -265,6 +283,8 @@ load_config() {
   NO_OPEN_AFTER_CREATE="${NO_OPEN_AFTER_CREATE:-false}"
   USE_REMOTE_MAIN="${USE_REMOTE_MAIN:-false}"
   REQUIRE_CONFIRM_REMOVE="${REQUIRE_CONFIRM_REMOVE:-true}"
+  # Banner gradient source for `ws list`: ws-colors | recent-commits | static.
+  WS_BANNER_COLORS="${WS_BANNER_COLORS:-ws-colors}"
   MAIN_WORKSPACE_FILE="${MAIN_WORKSPACE_FILE:-}"
   SYNC_MAIN_WORKSPACE="${SYNC_MAIN_WORKSPACE:-true}"
   # IDE per repo role (see config.example.sh); defaulted and validated here so

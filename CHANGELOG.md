@@ -9,6 +9,18 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.12.0] — 2026-07-27
+
+### Added
+- `WS_BANNER_COLORS` config controls the `ws list` wordmark banner's gradient:
+  `ws-colors` (default) fades it through your current workspaces' accent colors
+  in list order — falling back to the static fade until at least two colored
+  workspaces exist; `recent-commits` fades through this repo's last 3 commit
+  colors (first 6 hex of each SHA), so the banner shifts as commits land;
+  `static` keeps the fixed pink→sky brand fade (same as `ws help`).
+- `ws_grad` gained a multi-stop mode: when `WSM_GRAD_STOPS_*` hold two or more
+  colors it fades through all of them, not just the two brand endpoints.
+
 ## [2.11.0] — 2026-07-27
 
 ### Added
@@ -400,7 +412,8 @@ the identity change.
   own `<sub>.anny.dev` subdomain via Laravel Valet/nginx, Cognitor key
   seeding, `install.sh`, and Homebrew tap packaging.
 
-[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.11.0...HEAD
+[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.12.0...HEAD
+[2.12.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.11.0...v2.12.0
 [2.11.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.10.0...v2.11.0
 [2.10.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.9.1...v2.10.0
 [2.9.1]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.9.0...v2.9.1

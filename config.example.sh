@@ -64,6 +64,11 @@ TASK_URL_TEMPLATE=""
 # e.g. MR_ASSIGNEE="vinson.mick"
 MR_ASSIGNEE=""
 
+# Whether `ws mr` creates merge requests as drafts. true (default) makes a
+# draft; false makes them ready for review. Override per run with `ws mr
+# --draft` (force draft) or `ws mr --nd` (force no-draft).
+MR_DRAFT=true
+
 # IDE used to open workspaces, per repo role. Allowed values: vscode (the
 # default), phpstorm, webstorm, zed. With the SAME value on both sides,
 # `ws open` / `ws create` open the workspace combined in ONE window (vscode:

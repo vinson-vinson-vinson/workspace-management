@@ -9,6 +9,14 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.11.0] — 2026-07-27
+
+### Added
+- `MR_DRAFT` config (default `true`) controls whether `ws mr` creates merge
+  requests as drafts. With `false`, MRs are created ready for review. The new
+  `ws mr --draft` forces a draft and `ws mr --nd` forces no-draft, each
+  overriding the config for that run (giving both is an error).
+
 ## [2.10.0] — 2026-07-27
 
 ### Added
@@ -392,7 +400,8 @@ the identity change.
   own `<sub>.anny.dev` subdomain via Laravel Valet/nginx, Cognitor key
   seeding, `install.sh`, and Homebrew tap packaging.
 
-[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.10.0...HEAD
+[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.11.0...HEAD
+[2.11.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.10.0...v2.11.0
 [2.10.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.9.1...v2.10.0
 [2.9.1]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.9.0...v2.9.1
 [2.9.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.8.1...v2.9.0

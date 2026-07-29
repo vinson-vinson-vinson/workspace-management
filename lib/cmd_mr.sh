@@ -8,12 +8,14 @@
 cmd_mr_usage() {
   cat <<'USAGE'
 Usage:
-  ws mr [SLUG] [--fe | --be | --all] [--target <branch>] [--nd] [--dry-run]
+  ws mr [SLUG] [--fe | --be | --all] [--target <branch>] [--draft | --nd] [--dry-run]
 
-For each repo of a workspace, open its merge request if one exists, or create a
-draft — but only when the branch has commits the target doesn't. A repo with
+For each repo of a workspace, open its merge request if one exists, or create
+one — but only when the branch has commits the target doesn't. A repo with
 nothing to merge is skipped, so running this on a half-done workspace does the
 right thing on each side independently.
+
+New MRs are drafts by default (MR_DRAFT in config.sh; --draft/--nd override).
 
 Arguments:
   SLUG          Workspace to act on. Defaults to the one CWD is inside.
@@ -26,7 +28,8 @@ Options:
                 Target branch for the MR. Defaults per repo to the base branch
                 it was cut from (FRONTEND_BASE_BRANCH / BACKEND_BASE_BRANCH,
                 both "main" out of the box).
-      --nd      No-draft: create the MR ready for review, not as a draft.
+      --draft   Force a draft MR (overrides MR_DRAFT=false).
+      --nd      No-draft: create the MR ready for review (overrides MR_DRAFT=true).
       --dry-run Print what would happen without pushing or touching GitLab.
   -h, --help    Show this help.
 
@@ -94,7 +97,7 @@ _mr_for_repo() {
   local title; title="$(_mr_title "$branch")"
 
   if "$DRY_RUN"; then
-    local kind="draft MR"; "$NO_DRAFT" && kind="MR"
+    local kind="MR"; "$DRAFT" && kind="draft MR"
     printf '[dry-run] %s: %s commit(s) ahead of %s\n' "$label" "$ahead" "$target"
     printf '[dry-run]   push %s, then %s "%s" -> %s\n' "$branch" "$kind" "$title" "$target"
     [[ -n "$MR_ASSIGNEE" ]] && printf '[dry-run]   assignee: %s\n' "$MR_ASSIGNEE"
@@ -125,13 +128,13 @@ _mr_for_repo() {
     return 0
   fi
 
-  # Draft by default; --nd (NO_DRAFT) opens it ready for review instead.
-  local kind="draft MR"; "$NO_DRAFT" && kind="MR"
+  # Draft state resolved in cmd_mr from MR_DRAFT + --draft/--nd.
+  local kind="MR"; "$DRAFT" && kind="draft MR"
   log "$label: creating $kind -> $target"
   # Build the optional flags as an array so an unset one adds nothing rather
-  # than a stray empty argument: --draft (unless --nd) and --assignee.
+  # than a stray empty argument: --draft (when drafting) and --assignee.
   local -a extra=()
-  "$NO_DRAFT" || extra+=(--draft)
+  "$DRAFT" && extra+=(--draft)
   [[ -n "$MR_ASSIGNEE" ]] && extra+=(--assignee "$MR_ASSIGNEE")
   local out
   out="$( cd "$worktree" && glab mr create --yes --fill \
@@ -148,8 +151,8 @@ _mr_for_repo() {
 
 cmd_mr() {
   DRY_RUN=false
-  NO_DRAFT=false
   local fe=false be=false target="" slug=""
+  local want_draft=false want_nodraft=false
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -157,7 +160,8 @@ cmd_mr() {
       --be)       be=true; shift ;;
       --all)      fe=true; be=true; shift ;;
       --target)   target="${2:-}"; [[ -n "$target" ]] || { err "--target needs a branch"; exit 1; }; shift 2 ;;
-      --nd)       NO_DRAFT=true; shift ;;
+      --draft)    want_draft=true; shift ;;
+      --nd)       want_nodraft=true; shift ;;
       --dry-run)  DRY_RUN=true; shift ;;
       -h|--help)  cmd_mr_usage; exit 0 ;;
       -*) err "Unknown option: $1"; cmd_mr_usage; exit 1 ;;
@@ -165,6 +169,15 @@ cmd_mr() {
           slug="$1"; shift ;;
     esac
   done
+
+  # Draft or not: an explicit flag wins; otherwise the MR_DRAFT config default
+  # (true out of the box). --draft and --nd are opposites — refuse both.
+  if "$want_draft" && "$want_nodraft"; then
+    err "--draft and --nd are mutually exclusive."; exit 1
+  fi
+  if "$want_draft"; then DRAFT=true
+  elif "$want_nodraft"; then DRAFT=false
+  else DRAFT="$MR_DRAFT"; fi
 
   require_command git
   require_command glab

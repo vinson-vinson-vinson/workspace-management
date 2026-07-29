@@ -7,7 +7,7 @@
 # being set before it is sourced.
 # -----------------------------------------------------------------------------
 
-WSM_VERSION="2.10.0"
+WSM_VERSION="2.11.0"
 
 # Sudoers drop-in installed by `ws trust` (NOPASSWD for the exact nginx
 # commands `ws serve` runs). Shared: trust writes it, serve checks for it.
@@ -288,6 +288,9 @@ load_config() {
   # (default) = don't assign. Only applies to freshly created MRs, not ones
   # that already exist.
   MR_ASSIGNEE="${MR_ASSIGNEE:-}"
+  # Whether `ws mr` creates MRs as drafts. true (default) = draft; false =
+  # ready-for-review. `--draft` / `--nd` override per invocation.
+  MR_DRAFT="${MR_DRAFT:-true}"
   TEST_DB_ENABLED="${TEST_DB_ENABLED:-true}"
   TEST_DB_PREFIX="${TEST_DB_PREFIX:-anny_bookings_test}"
   TEST_DB_HOST="${TEST_DB_HOST:-127.0.0.1}"

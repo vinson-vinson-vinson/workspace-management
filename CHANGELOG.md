@@ -9,6 +9,8 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.13.0] — 2026-07-29
+
 ### Added
 - Lifecycle hooks: `ws remove` runs every executable in
   `$WSM_HOOKS_DIR/pre-remove/` after you confirm and before it deletes anything
@@ -423,7 +425,8 @@ the identity change.
   own `<sub>.anny.dev` subdomain via Laravel Valet/nginx, Cognitor key
   seeding, `install.sh`, and Homebrew tap packaging.
 
-[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.12.0...HEAD
+[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.13.0...HEAD
+[2.13.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.12.0...v2.13.0
 [2.12.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.11.0...v2.12.0
 [2.11.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.10.0...v2.11.0
 [2.10.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.9.1...v2.10.0

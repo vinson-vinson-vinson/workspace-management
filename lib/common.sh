@@ -295,6 +295,11 @@ load_config() {
   # Commands auto-started in terminal tabs after ws create. $WT_FRONTEND and
   # $WT_BACKEND are substituted at runtime. Same +"" guard as above.
   POST_CREATE_TERMINALS=(${POST_CREATE_TERMINALS[@]+"${POST_CREATE_TERMINALS[@]}"})
+  # Terminal control: can be disabled entirely (TERMINAL_ENABLED=false) or
+  # restricted to one side (TERMINAL_SIDE=frontend|backend). Set by the TS CLI
+  # wrapper or directly in config.sh. Default: enabled, both sides.
+  TERMINAL_ENABLED="${TERMINAL_ENABLED:-true}"
+  TERMINAL_SIDE="${TERMINAL_SIDE:-}"
   # Tabs beyond the served apps: "NAME:frontend|backend:COMMAND".
   SESSION_TABS=(${SESSION_TABS[@]+"${SESSION_TABS[@]}"})
   [[ ${#SESSION_TABS[@]} -gt 0 ]] || SESSION_TABS=(
@@ -336,6 +341,8 @@ session_tabs() {
   for entry in ${SESSION_TABS[@]+"${SESSION_TABS[@]}"}; do
     name="${entry%%:*}"; rest="${entry#*:}"
     side="${rest%%:*}"; cmd="${rest#*:}"
+    # Skip tabs for the wrong side when TERMINAL_SIDE restricts output.
+    [[ -z "${TERMINAL_SIDE:-}" || "$side" == "${TERMINAL_SIDE}" ]] || continue
     case "$side" in
       frontend) printf '%s\t%s\t%s\n' "$name" "$fe" "$cmd" ;;
       backend)  printf '%s\t%s\t%s\n' "$name" "$be" "$cmd" ;;
@@ -452,8 +459,15 @@ TABS
 
 # All-VS-Code workspaces start these from the .code-workspace tasks block;
 # running both would start every dev server twice on the same port.
+# TERMINAL_ENABLED / TERMINAL_SIDE let callers (TS CLI or config.sh) control
+# whether and which terminals open — no terminals by default for Warp, or
+# frontend-only when you don't need queue horizon / backend agents.
 auto_open_terminals_if_needed() {
   local wt_fe="$1" wt_be="$2"; shift 2
+  if [[ "${TERMINAL_ENABLED:-true}" != "true" ]]; then
+    vlog "Terminals disabled (TERMINAL_ENABLED=${TERMINAL_ENABLED:-})"
+    return 0
+  fi
   [[ "$FRONTEND_IDE" == "vscode" && "$BACKEND_IDE" == "vscode" ]] && return 0
   auto_open_terminals "$wt_fe" "$wt_be" "$@"
 }

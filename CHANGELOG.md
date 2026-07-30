@@ -9,6 +9,15 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.14.0] — 2026-07-30
+
+### Changed
+- `ws create` draws a new workspace's accent color from a cohesive 25-color
+  Neon palette (evenly-spaced, high-saturation hues) and no longer reuses a
+  color another open workspace is already wearing — it picks an unused one, so
+  workspaces stay visually distinct in `ws list`, the title bar, and the banner.
+  It only recycles once more than 25 are live at the same time.
+
 ## [2.13.0] — 2026-07-29
 
 ### Added
@@ -425,7 +434,8 @@ the identity change.
   own `<sub>.anny.dev` subdomain via Laravel Valet/nginx, Cognitor key
   seeding, `install.sh`, and Homebrew tap packaging.
 
-[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.13.0...HEAD
+[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.14.0...HEAD
+[2.14.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.13.0...v2.14.0
 [2.13.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.12.0...v2.13.0
 [2.12.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.11.0...v2.12.0
 [2.11.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.10.0...v2.11.0

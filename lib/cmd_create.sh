@@ -317,23 +317,37 @@ ${tasks_block}  "settings": {${allow_tasks}
 EOF
 }
 
+# Neon palette: 25 evenly-spaced hues at high saturation (HSL 90/61). 25 rather
+# than 50 keeps neighbouring colors well apart, so every workspace is maximally
+# distinguishable at a glance. A new workspace gets a color NO open workspace is
+# already wearing — picked at random among the free ones for variety; it only
+# recycles once more than 25 are live at the same time.
 random_workspace_color() {
-  local -a colors=(
-    '#e6194b' '#3cb44b' '#ffe119' '#4363d8'
-    '#f58231' '#911eb4' '#42d4f4' '#f032e6'
-    '#bfef45' '#fabed4' '#469990' '#dcbeff'
-    '#9a6324' '#fffac8' '#800000' '#aaffc3'
-    '#808000' '#ffd8b1' '#000075' '#a9a9a9'
-    '#ff4500' '#1e90ff' '#32cd32' '#ff1493'
-    '#8b4513' '#00ced1' '#9400d3' '#ff8c00'
-    '#2e8b57' '#7b68ee' '#dc143c' '#00fa9a'
-    '#4682b4' '#d2691e' '#6b8e23' '#c71585'
-    '#008080' '#b22222' '#daa520' '#5f9ea0'
-    '#8a2be2' '#228b22' '#cd5c5c' '#4b0082'
-    '#ff6347' '#20b2aa' '#9932cc' '#556b2f'
-    '#e9967a' '#191970'
+  local -a palette=(
+    '#f54242' '#f56d42' '#f59842' '#f5c342' '#f5ee42'
+    '#d1f542' '#a6f542' '#7bf542' '#50f542' '#42f55f'
+    '#42f58a' '#42f5b5' '#42f5e0' '#42e0f5' '#42b5f5'
+    '#428af5' '#425ff5' '#5042f5' '#7b42f5' '#a642f5'
+    '#d142f5' '#f542ee' '#f542c3' '#f54298' '#f5426d'
   )
-  printf '%s' "${colors[RANDOM % ${#colors[@]}]}"
+  # Colors already in use by existing workspaces. A space-padded string, not an
+  # associative array — macOS ships bash 3.2, which has none.
+  local used=" " slug c
+  while IFS= read -r slug; do
+    [[ -n "$slug" ]] || continue
+    c="$(_ws_color "$slug")"
+    [[ -n "$c" ]] && used+="$c "
+  done < <(workspace_slugs)
+  # Prefer a palette color no one's wearing; fall back to any if all 50 are taken.
+  local -a free=()
+  for c in "${palette[@]}"; do
+    [[ "$used" == *" $c "* ]] || free+=("$c")
+  done
+  if (( ${#free[@]} > 0 )); then
+    printf '%s' "${free[RANDOM % ${#free[@]}]}"
+  else
+    printf '%s' "${palette[RANDOM % ${#palette[@]}]}"
+  fi
 }
 
 cmd_create() {

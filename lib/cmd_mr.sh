@@ -65,6 +65,13 @@ _mr_for_repo() {
   branch="$(worktree_branch "$worktree")"
   [[ -n "$branch" ]] || { warn "$label: no branch in the worktree — skipping."; return 0; }
   target="${target_override:-$base_branch}"
+  # With set -u active, an empty target would blow up every git ref below.
+  # Fall back to the configured base branch so `ws mr` works even without
+  # an explicit --target (the normal case).
+  [[ -n "$target" ]] || {
+    target="$base_branch"
+    vlog "$label: no target specified — defaulting to $base_branch"
+  }
 
   # Count commits the branch has that the target doesn't. Prefer origin/<target>
   # — the MR is judged against the remote, so that's the honest baseline.
@@ -101,8 +108,13 @@ _mr_for_repo() {
   fi
   if "$need_push"; then
     log "$label: pushing $branch…"
-    ( cd "$worktree" && git push -u origin "$branch" ) >/dev/null 2>&1 \
-      || { err "$label: push failed — resolve it and re-run."; return 1; }
+    if ! ( cd "$worktree" && git push -u origin "$branch" ) >/dev/null 2>&1; then
+      # Show the real error — a swallowed push failure is a mystery.
+      err "$label: push failed. Re-running with output:"
+      ( cd "$worktree" && git push -u origin "$branch" ) 2>&1 | sed 's/^/    /' >&2 || true
+      err "$label: resolve the push error and re-run 'ws mr'."
+      return 1
+    fi
   fi
 
   # Already an MR for this branch? Open it instead of making a second.

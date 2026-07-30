@@ -97,5 +97,5 @@ cmd_test() {
 
   log "Running suite against isolated DB: $db"
   cd "$wt_backend"
-  DB_DATABASE="$db" exec php vendor/bin/phpunit "$@"
+  DB_DATABASE="$db" exec php -d memory_limit=1G vendor/bin/phpunit "$@"
 }

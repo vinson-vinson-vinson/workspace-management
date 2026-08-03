@@ -107,6 +107,8 @@ _mr_for_repo() {
     need_push=true
   fi
   if "$need_push"; then
+    # Defensive: ensure branch is set before expansion (set -u is global).
+    [[ -n "${branch:-}" ]] || { err "$label: cannot push — no branch name available."; return 1; }
     log "$label: pushing $branch…"
     if ! ( cd "$worktree" && git push -u origin "$branch" ) >/dev/null 2>&1; then
       # Show the real error — a swallowed push failure is a mystery.

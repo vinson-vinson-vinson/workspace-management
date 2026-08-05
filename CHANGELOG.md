@@ -9,6 +9,14 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.14.1] — 2026-07-30
+
+### Fixed
+- `ws create` picked the workspace color with `$RANDOM` inside a command
+  substitution, and bash 3.2 seeds `$RANDOM` from the PID there — so back-to-back
+  creates walked adjacent palette hues and came out near-identical (a run of
+  greens). The index now comes from `/dev/urandom`, so it's genuinely random.
+
 ## [2.14.0] — 2026-07-30
 
 ### Changed
@@ -434,7 +442,8 @@ the identity change.
   own `<sub>.anny.dev` subdomain via Laravel Valet/nginx, Cognitor key
   seeding, `install.sh`, and Homebrew tap packaging.
 
-[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.14.0...HEAD
+[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.14.1...HEAD
+[2.14.1]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.14.0...v2.14.1
 [2.14.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.13.0...v2.14.0
 [2.13.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.12.0...v2.13.0
 [2.12.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.11.0...v2.12.0

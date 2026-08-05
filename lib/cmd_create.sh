@@ -317,6 +317,19 @@ ${tasks_block}  "settings": {${allow_tasks}
 EOF
 }
 
+# Uniform random index in [0, $1) from /dev/urandom. We deliberately do NOT use
+# $RANDOM: cmd_create picks the color via `$(random_workspace_color)`, and inside
+# command substitution bash 3.2 seeds $RANDOM straight from the PID — so
+# `$RANDOM % n` on consecutive `ws create` runs walks ADJACENT palette entries,
+# i.e. near-identical hues (the "same green every time" bug). urandom sidesteps
+# the PID entirely.
+_rand_below() {
+  local n="$1" r
+  r="$(od -An -N4 -tu4 /dev/urandom 2>/dev/null | tr -dc '0-9')"
+  [[ -n "$r" ]] || r="${RANDOM}${RANDOM}$$"   # fallback if /dev/urandom is missing
+  printf '%s' "$(( r % n ))"
+}
+
 # Neon palette: 25 evenly-spaced hues at high saturation (HSL 90/61). 25 rather
 # than 50 keeps neighbouring colors well apart, so every workspace is maximally
 # distinguishable at a glance. A new workspace gets a color NO open workspace is
@@ -344,9 +357,9 @@ random_workspace_color() {
     [[ "$used" == *" $c "* ]] || free+=("$c")
   done
   if (( ${#free[@]} > 0 )); then
-    printf '%s' "${free[RANDOM % ${#free[@]}]}"
+    printf '%s' "${free[$(_rand_below "${#free[@]}")]}"
   else
-    printf '%s' "${palette[RANDOM % ${#palette[@]}]}"
+    printf '%s' "${palette[$(_rand_below "${#palette[@]}")]}"
   fi
 }
 

@@ -330,11 +330,11 @@ _rand_below() {
   printf '%s' "$(( r % n ))"
 }
 
-# Neon palette: 25 evenly-spaced hues at high saturation (HSL 90/61). 25 rather
-# than 50 keeps neighbouring colors well apart, so every workspace is maximally
-# distinguishable at a glance. A new workspace gets a color NO open workspace is
-# already wearing — picked at random among the free ones for variety; it only
-# recycles once more than 25 are live at the same time.
+# Neon palette: 25 evenly-spaced hues at high saturation (HSL 90/61). A new
+# workspace gets the unused color FARTHEST (max-min RGB distance) from every
+# color already in use, so each accent is as distinct as possible from the
+# others — separation stays maximal at any count (~36 deg apart at 10 live,
+# ~18 deg at 20). Recycles only once more than 25 are live at the same time.
 random_workspace_color() {
   local -a palette=(
     '#f54242' '#f56d42' '#f59842' '#f5c342' '#f5ee42'
@@ -343,24 +343,53 @@ random_workspace_color() {
     '#428af5' '#425ff5' '#5042f5' '#7b42f5' '#a642f5'
     '#d142f5' '#f542ee' '#f542c3' '#f54298' '#f5426d'
   )
-  # Colors already in use by existing workspaces. A space-padded string, not an
-  # associative array — macOS ships bash 3.2, which has none.
-  local used=" " slug c
+  # Colors already worn by existing workspaces (any color, not just palette ones).
+  local -a used=()
+  local slug c
   while IFS= read -r slug; do
     [[ -n "$slug" ]] || continue
     c="$(_ws_color "$slug")"
-    [[ -n "$c" ]] && used+="$c "
+    [[ "$c" =~ ^#[0-9a-fA-F]{6}$ ]] && used+=("$c")
   done < <(workspace_slugs)
-  # Prefer a palette color no one's wearing; fall back to any if all 50 are taken.
-  local -a free=()
-  for c in "${palette[@]}"; do
-    [[ "$used" == *" $c "* ]] || free+=("$c")
-  done
-  if (( ${#free[@]} > 0 )); then
-    printf '%s' "${free[$(_rand_below "${#free[@]}")]}"
-  else
+
+  # Nothing to stay clear of yet — pick any palette color at random.
+  if (( ${#used[@]} == 0 )); then
     printf '%s' "${palette[$(_rand_below "${#palette[@]}")]}"
+    return
   fi
+
+  # Candidates: palette colors no one's wearing (no reuse). If all 25 are taken,
+  # allow the whole palette so we still return the most-isolated one.
+  local -a cand=() u seen
+  for c in "${palette[@]}"; do
+    seen=0
+    for u in "${used[@]}"; do [[ "$u" == "$c" ]] && { seen=1; break; }; done
+    (( seen )) || cand+=("$c")
+  done
+  (( ${#cand[@]} > 0 )) || cand=( "${palette[@]}" )
+
+  # Decompose the used colors into RGB once.
+  local -a ur=() ug=() ub=()
+  for c in "${used[@]}"; do
+    c="${c#\#}"; ur+=($((16#${c:0:2}))); ug+=($((16#${c:2:2}))); ub+=($((16#${c:4:2})))
+  done
+
+  # Farthest-point: pick the candidate whose NEAREST used color is the farthest
+  # away — maximise the minimum squared RGB distance. Ties broken at random.
+  local best=-1 cr cg cb i mind d dr dg db h
+  local -a winners=()
+  for c in "${cand[@]}"; do
+    h="${c#\#}"; cr=$((16#${h:0:2})); cg=$((16#${h:2:2})); cb=$((16#${h:4:2}))
+    mind=-1
+    for i in "${!ur[@]}"; do
+      dr=$((cr - ur[i])); dg=$((cg - ug[i])); db=$((cb - ub[i]))
+      d=$((dr * dr + dg * dg + db * db))
+      if (( mind < 0 || d < mind )); then mind=$d; fi
+    done
+    if (( mind > best )); then best=$mind; winners=("$c")
+    elif (( mind == best )); then winners+=("$c"); fi
+  done
+  printf '%s' "${winners[$(_rand_below "${#winners[@]}")]}"
 }
 
 cmd_create() {

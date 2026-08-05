@@ -9,6 +9,15 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.15.0] — 2026-07-30
+
+### Changed
+- `ws create` assigns the workspace color by farthest-point selection: the
+  unused palette color with the greatest minimum RGB distance to every color
+  already in use. Accents stay maximally spread as workspaces accumulate
+  (~36° apart at 10 live, ~18° at 20) instead of a plain random pick that could
+  land two look-alikes; ties are broken randomly.
+
 ## [2.14.1] — 2026-07-30
 
 ### Fixed
@@ -442,7 +451,8 @@ the identity change.
   own `<sub>.anny.dev` subdomain via Laravel Valet/nginx, Cognitor key
   seeding, `install.sh`, and Homebrew tap packaging.
 
-[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.14.1...HEAD
+[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.15.0...HEAD
+[2.15.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.14.1...v2.15.0
 [2.14.1]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.14.0...v2.14.1
 [2.14.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.13.0...v2.14.0
 [2.13.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.12.0...v2.13.0

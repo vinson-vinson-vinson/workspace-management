@@ -207,6 +207,20 @@ BASE_DOMAIN="anny.test"
 # Landing path shown by list-workspaces for each served workspace.
 ADMIN_PATH="/admin/calendar"
 
+# ------------------------------ sharing (ws share) ---------------------------
+# `ws share [slug]` runs ngrok in the foreground to expose a served workspace
+# (or main) on the internet, valet-share style. Only needed if you use it.
+#
+# Your reserved ngrok domain (free plan gives one static domain). Required for
+# `ws share`. e.g. NGROK_DOMAIN="your-name.ngrok-free.dev"
+NGROK_DOMAIN=""
+# Upstream ngrok forwards to for `ws share main`. Workspaces are derived
+# (https://<sub>.$BASE_DOMAIN); main can differ if it's served on another
+# scheme/port. Optional; defaults to https://$BASE_DOMAIN.
+# NGROK_MAIN_UPSTREAM="http://anny.test:60"
+# The ngrok binary. Optional; defaults to "ngrok".
+NGROK_BIN="ngrok"
+
 # Base of the per-workspace dev-server port block. Kept well clear of your main
 # workspace's ports so main + a task can run at the same time.
 PORT_RANGE_START=20000

@@ -9,6 +9,17 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.16.0] — 2026-08-07
+
+### Added
+- `ws share [SLUG]`: expose a served workspace — or main — to the internet
+  through your reserved ngrok domain, like `valet share`. Runs in the
+  foreground; the public URL is live only while the command runs (Ctrl-C stops
+  it), so there's no state to track and free ngrok's one-tunnel limit is a
+  non-issue. Defaults to the workspace you're in, else main; `main`/`0` forces
+  main. Config: `NGROK_DOMAIN` (your reserved domain, required),
+  `NGROK_MAIN_UPSTREAM` (how main is reached; workspaces are derived), `NGROK_BIN`.
+
 ## [2.15.0] — 2026-07-30
 
 ### Changed
@@ -451,7 +462,8 @@ the identity change.
   own `<sub>.anny.dev` subdomain via Laravel Valet/nginx, Cognitor key
   seeding, `install.sh`, and Homebrew tap packaging.
 
-[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.15.0...HEAD
+[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.16.0...HEAD
+[2.16.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.15.0...v2.16.0
 [2.15.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.14.1...v2.15.0
 [2.14.1]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.14.0...v2.14.1
 [2.14.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.13.0...v2.14.0

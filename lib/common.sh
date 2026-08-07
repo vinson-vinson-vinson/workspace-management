@@ -7,7 +7,7 @@
 # being set before it is sourced.
 # -----------------------------------------------------------------------------
 
-WSM_VERSION="2.15.0"
+WSM_VERSION="2.16.0"
 
 # Sudoers drop-in installed by `ws trust` (NOPASSWD for the exact nginx
 # commands `ws serve` runs). Shared: trust writes it, serve checks for it.
@@ -397,6 +397,10 @@ load_config() {
   # Whether `ws mr` creates MRs as drafts. true (default) = draft; false =
   # ready-for-review. `--draft` / `--nd` override per invocation.
   MR_DRAFT="${MR_DRAFT:-true}"
+  # `ws share` (ngrok): your reserved domain, how main is reached, the binary.
+  NGROK_DOMAIN="${NGROK_DOMAIN:-}"
+  NGROK_MAIN_UPSTREAM="${NGROK_MAIN_UPSTREAM:-https://$BASE_DOMAIN}"
+  NGROK_BIN="${NGROK_BIN:-ngrok}"
   TEST_DB_ENABLED="${TEST_DB_ENABLED:-true}"
   TEST_DB_PREFIX="${TEST_DB_PREFIX:-anny_bookings_test}"
   TEST_DB_HOST="${TEST_DB_HOST:-127.0.0.1}"

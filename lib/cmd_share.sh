@@ -78,9 +78,16 @@ cmd_share() {
   "$NGROK_BIN" config check >/dev/null 2>&1 \
     || warn "ngrok has no valid config/authtoken — run 'ngrok config add-authtoken <token>' if the tunnel fails."
 
-  # ngrok 3.x forwards to an HTTPS upstream without verifying the local Valet
-  # cert by default, so we point it straight at the served site.
-  local -a cmd=( "$NGROK_BIN" http --url="$domain" "$upstream" )
+  # --host-header is essential: Valet is name-based virtual hosting (every site
+  # shares one IP/port, disambiguated purely by Host). ngrok preserves the
+  # incoming Host (the ngrok domain) by default, which matches no site — nginx
+  # falls through to its default server (main) or a "Not Found" page, never the
+  # workspace. Rewriting Host to the site's own domain is what makes nginx route
+  # to the right worktree (this is exactly what `valet share` does).
+  #
+  # ngrok 3.x also forwards to the HTTPS upstream without verifying the local
+  # Valet cert by default, so pointing straight at the served site is fine.
+  local -a cmd=( "$NGROK_BIN" http --url="$domain" --host-header="$host" "$upstream" )
   local landing="https://${domain}${ADMIN_PATH}"
 
   if "$DRY_RUN"; then

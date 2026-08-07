@@ -9,6 +9,15 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.16.1] — 2026-08-07
+
+### Fixed
+- `ws share` now rewrites the `Host` header to the target's own domain
+  (`--host-header`). Valet is name-based virtual hosting, but ngrok forwards the
+  ngrok domain as `Host` by default — which matched no site, so nginx served its
+  default server (main) or a "Not Found" page instead of the intended workspace.
+  (`valet share` sets this for you, which is why it only bit hand-rolled tunnels.)
+
 ## [2.16.0] — 2026-08-07
 
 ### Added
@@ -462,7 +471,8 @@ the identity change.
   own `<sub>.anny.dev` subdomain via Laravel Valet/nginx, Cognitor key
   seeding, `install.sh`, and Homebrew tap packaging.
 
-[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.16.0...HEAD
+[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.16.1...HEAD
+[2.16.1]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.16.0...v2.16.1
 [2.16.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.15.0...v2.16.0
 [2.15.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.14.1...v2.15.0
 [2.14.1]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.14.0...v2.14.1

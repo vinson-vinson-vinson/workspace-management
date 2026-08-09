@@ -9,6 +9,18 @@ when a release is tagged.
 
 ## [Unreleased]
 
+### Fixed
+- `ws serve`: the backend worktree's `public/storage` now links the
+  WORKTREE's own `storage/app/public` instead of the main repo's. Laravel
+  writes uploads to the worktree's storage (filesystem roots resolve against
+  `base_path`), so the old main-pointing link made every upload saved in a
+  workspace 404 the moment it was stored — while old main-side files kept
+  serving. serve seeds main's existing uploads into the worktree once
+  (no-clobber copy, so the shared main DB's older records still resolve) and
+  heals a wrong-target link — including the one earlier ws versions and the
+  legacy post-checkout hook created — on every run, so a plain `ws serve`
+  repairs existing workspaces.
+
 ## [2.14.0] — 2026-07-30
 
 ### Changed

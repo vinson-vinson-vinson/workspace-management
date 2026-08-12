@@ -164,10 +164,11 @@ client**, once:
 ## Hooks
 
 Splice machine-specific steps into a command's lifecycle with **hooks** — small
-executable scripts the tool runs at a defined point. Today there's one event:
+executable scripts the tool runs at a defined point. Two events:
 
 | Event | When it runs |
 | --- | --- |
+| `post-create` | During `ws create`, after the workspace is provisioned and its `.code-workspace` is written, **before the IDE opens**. A failing hook only **warns** — it never undoes the create. |
 | `pre-remove` | During `ws remove`, after you confirm and **before anything is deleted** (both worktrees still exist). A hook that exits non-zero **aborts** the removal, so nothing is lost. |
 
 Hooks live in `$WSM_HOOKS_DIR/<event>/` (default `hooks/` next to the command),
@@ -177,23 +178,27 @@ them executable to enable:
 
 ```bash
 cp -R hooks.example/ hooks/
-chmod +x hooks/pre-remove/*.sh
+chmod +x hooks/**/*.sh
 ```
 
 Every executable file in the event dir runs in lexical order. Each is a normal
-process; `ws remove` exports the context it needs:
+process; the tool exports the context it needs:
 
 | Variable | Meaning |
 | --- | --- |
-| `WS_SLUG` | The workspace slug being removed. |
-| `WS_SESSION_DIR` | The session directory. |
+| `WS_SLUG` | The workspace slug. |
+| `WS_SESSION_DIR` | The session directory (parent of both worktrees). |
 | `WS_FRONTEND` / `WS_BACKEND` | The two worktree paths. |
 | `WS_FRONTEND_DIR_NAME` / `WS_BACKEND_DIR_NAME` | The repo directory names. |
+| `WS_WORKSPACE_FILE` | The `.code-workspace` file (`post-create` only). |
 
-The shipped example, `pre-remove/backup-planning.sh`, copies a workspace's
-backend `planning/` directory to `~/Projects/ws_docs/<slug>/` before teardown so
-notes survive for later lookup (destination overridable with `WS_DOCS_DIR`).
-`ws remove --dry-run` lists the hooks it would run without executing them.
+The shipped examples pair up: `post-create/init-planning.sh` gives a new
+workspace a session-local `planning/` directory (a sibling of the worktrees,
+outside both repos, so it's never git-tracked) and adds it to the VS Code
+window; `pre-remove/backup-planning.sh` then copies that `planning/` to
+`~/Projects/ws_docs/<slug>/` before teardown (destination overridable with
+`WS_DOCS_DIR`). Both `ws create` and `ws remove` support `--dry-run`, which
+lists the hooks they would run without executing them.
 
 ## Directory structure
 

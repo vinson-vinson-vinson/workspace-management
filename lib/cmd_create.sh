@@ -156,6 +156,17 @@ add_worktree() {
 # instead. Uses cmd_create's session paths (dynamic scope).
 open_workspace() {
   local workspace_file="$1"
+  # Custom post-create steps run HERE — the workspace is fully provisioned and
+  # its .code-workspace written, but the IDE hasn't opened yet, so a hook can
+  # create session-local dirs (and adjust the workspace file) before the window
+  # comes up. Non-fatal: the workspace already exists, so a failing hook only
+  # warns — it never undoes the create. Context is exported for the hooks.
+  export WS_SLUG="$branch_slug" WS_SESSION_DIR="$session_dir" \
+         WS_FRONTEND="$frontend_worktree" WS_BACKEND="$backend_worktree" \
+         WS_FRONTEND_DIR_NAME="$FRONTEND_DIR_NAME" WS_BACKEND_DIR_NAME="$BACKEND_DIR_NAME" \
+         WS_WORKSPACE_FILE="$workspace_file" WS_DRY_RUN="$DRY_RUN"
+  run_hooks post-create || warn "a post-create hook failed — the workspace was still created."
+
   if "$NO_OPEN_AFTER_CREATE"; then
     ok "IDE not opened (config: NO_OPEN_AFTER_CREATE)"
     return 0

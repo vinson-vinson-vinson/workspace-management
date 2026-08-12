@@ -9,6 +9,19 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.17.0] — 2026-08-12
+
+### Added
+- `post-create` lifecycle hook: `ws create` runs every executable in
+  `$WSM_HOOKS_DIR/post-create/` after the workspace is provisioned and its
+  `.code-workspace` is written, before the IDE opens — for machine-specific
+  setup steps. A failing hook only warns; it never undoes the create. The
+  context is exported (`WS_SLUG`, `WS_SESSION_DIR`, `WS_FRONTEND`, `WS_BACKEND`,
+  the dir names, and `WS_WORKSPACE_FILE`). Shipped example
+  `post-create/init-planning.sh` gives a workspace a session-local, git-ignored
+  `planning/` dir and adds it to the VS Code window; the updated
+  `pre-remove/backup-planning.sh` archives that dir on teardown.
+
 ## [2.16.1] — 2026-08-07
 
 ### Fixed
@@ -471,7 +484,8 @@ the identity change.
   own `<sub>.anny.dev` subdomain via Laravel Valet/nginx, Cognitor key
   seeding, `install.sh`, and Homebrew tap packaging.
 
-[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.16.1...HEAD
+[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.17.0...HEAD
+[2.17.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.16.1...v2.17.0
 [2.16.1]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.16.0...v2.16.1
 [2.16.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.15.0...v2.16.0
 [2.15.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.14.1...v2.15.0

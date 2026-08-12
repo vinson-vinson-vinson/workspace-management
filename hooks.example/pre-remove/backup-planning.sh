@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# pre-remove hook: back up the workspace's backend planning/ docs before the
-# workspace is torn down, so notes and plans survive for later lookup.
+# pre-remove hook: back up the workspace's session-local planning/ docs before
+# the workspace is torn down, so notes and plans survive for later lookup.
+# (Pairs with post-create/init-planning.sh, which creates that planning/ dir.)
 #
 # ENABLE IT: copy this whole tree into the live (gitignored) hooks dir and make
 # the script executable —
@@ -22,12 +23,12 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-src="$WS_BACKEND/planning"
+src="$WS_SESSION_DIR/planning"
 dest_root="${WS_DOCS_DIR:-$HOME/Projects/ws_docs}"
 dest="$dest_root/$WS_SLUG"
 
 if [[ ! -d "$src" ]]; then
-  echo "no planning/ in $WS_BACKEND — nothing to back up"
+  echo "no planning/ in $WS_SESSION_DIR — nothing to back up"
   exit 0
 fi
 

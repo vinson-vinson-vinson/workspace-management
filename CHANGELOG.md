@@ -20,6 +20,55 @@ when a release is tagged.
   heals a wrong-target link — including the one earlier ws versions and the
   legacy post-checkout hook created — on every run, so a plain `ws serve`
   repairs existing workspaces.
+## [2.17.0] — 2026-08-12
+
+### Added
+- `post-create` lifecycle hook: `ws create` runs every executable in
+  `$WSM_HOOKS_DIR/post-create/` after the workspace is provisioned and its
+  `.code-workspace` is written, before the IDE opens — for machine-specific
+  setup steps. A failing hook only warns; it never undoes the create. The
+  context is exported (`WS_SLUG`, `WS_SESSION_DIR`, `WS_FRONTEND`, `WS_BACKEND`,
+  the dir names, and `WS_WORKSPACE_FILE`). Shipped example
+  `post-create/init-planning.sh` gives a workspace a session-local, git-ignored
+  `planning/` dir and adds it to the VS Code window; the updated
+  `pre-remove/backup-planning.sh` archives that dir on teardown.
+
+## [2.16.1] — 2026-08-07
+
+### Fixed
+- `ws share` now rewrites the `Host` header to the target's own domain
+  (`--host-header`). Valet is name-based virtual hosting, but ngrok forwards the
+  ngrok domain as `Host` by default — which matched no site, so nginx served its
+  default server (main) or a "Not Found" page instead of the intended workspace.
+  (`valet share` sets this for you, which is why it only bit hand-rolled tunnels.)
+
+## [2.16.0] — 2026-08-07
+
+### Added
+- `ws share [SLUG]`: expose a served workspace — or main — to the internet
+  through your reserved ngrok domain, like `valet share`. Runs in the
+  foreground; the public URL is live only while the command runs (Ctrl-C stops
+  it), so there's no state to track and free ngrok's one-tunnel limit is a
+  non-issue. Defaults to the workspace you're in, else main; `main`/`0` forces
+  main. Config: `NGROK_DOMAIN` (your reserved domain, required),
+  `NGROK_MAIN_UPSTREAM` (how main is reached; workspaces are derived), `NGROK_BIN`.
+
+## [2.15.0] — 2026-07-30
+
+### Changed
+- `ws create` assigns the workspace color by farthest-point selection: the
+  unused palette color with the greatest minimum RGB distance to every color
+  already in use. Accents stay maximally spread as workspaces accumulate
+  (~36° apart at 10 live, ~18° at 20) instead of a plain random pick that could
+  land two look-alikes; ties are broken randomly.
+
+## [2.14.1] — 2026-07-30
+
+### Fixed
+- `ws create` picked the workspace color with `$RANDOM` inside a command
+  substitution, and bash 3.2 seeds `$RANDOM` from the PID there — so back-to-back
+  creates walked adjacent palette hues and came out near-identical (a run of
+  greens). The index now comes from `/dev/urandom`, so it's genuinely random.
 
 ## [2.14.0] — 2026-07-30
 
@@ -446,7 +495,12 @@ the identity change.
   own `<sub>.anny.dev` subdomain via Laravel Valet/nginx, Cognitor key
   seeding, `install.sh`, and Homebrew tap packaging.
 
-[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.14.0...HEAD
+[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.17.0...HEAD
+[2.17.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.16.1...v2.17.0
+[2.16.1]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.16.0...v2.16.1
+[2.16.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.15.0...v2.16.0
+[2.15.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.14.1...v2.15.0
+[2.14.1]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.14.0...v2.14.1
 [2.14.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.13.0...v2.14.0
 [2.13.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.12.0...v2.13.0
 [2.12.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.11.0...v2.12.0

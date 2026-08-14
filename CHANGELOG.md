@@ -9,6 +9,19 @@ when a release is tagged.
 
 ## [Unreleased]
 
+### Fixed
+- `ws mr` aborted with `branch\xe2: unbound variable` instead of pushing, so an
+  MR could only be opened after pushing the branch by hand. The log line before
+  the push interpolated `"$branch…"`, and bash 3.2 — still `/bin/bash` on
+  macOS — reads the first byte of the following multibyte ellipsis as part of
+  the variable name in a UTF-8 locale. That name is unset, which `set -u` makes
+  fatal. Braced to `${branch}`; this was the only such interpolation in the
+  tree.
+- A failed push in `ws mr` now prints git's own output instead of swallowing it
+  behind "push failed — resolve it and re-run", which named no cause and left
+  nothing to act on. The push still runs once; its output is captured and
+  replayed only on failure.
+
 ## [2.17.0] — 2026-08-12
 
 ### Added

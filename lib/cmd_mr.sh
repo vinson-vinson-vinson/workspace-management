@@ -113,9 +113,18 @@ _mr_for_repo() {
     need_push=true
   fi
   if "$need_push"; then
-    log "$label: pushing $branch…"
-    ( cd "$worktree" && git push -u origin "$branch" ) >/dev/null 2>&1 \
-      || { err "$label: push failed — resolve it and re-run."; return 1; }
+    # Braces required: bash 3.2 (macOS /bin/bash) reads the leading byte of a
+    # following multibyte character as part of the name, so "$branch…" looks up
+    # `branch\xe2` — unset, which `set -u` turns into a fatal error right before
+    # the push. Keep them on any $var directly followed by a non-ASCII glyph.
+    log "$label: pushing ${branch}…"
+    local push_out
+    if ! push_out="$( cd "$worktree" && git push -u origin "$branch" 2>&1 )"; then
+      err "$label: push failed —"
+      printf '%s\n' "$push_out" | sed 's/^/    /' >&2
+      err "$label: resolve it and re-run 'ws mr'."
+      return 1
+    fi
   fi
 
   # Already an MR for this branch? Open it instead of making a second.

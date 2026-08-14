@@ -113,7 +113,11 @@ _mr_for_repo() {
     need_push=true
   fi
   if "$need_push"; then
-    log "$label: pushing $branch…"
+    # Braces required: bash 3.2 (macOS /bin/bash) reads the leading byte of a
+    # following multibyte character as part of the name, so "$branch…" looks up
+    # `branch\xe2` — unset, which `set -u` turns into a fatal error right before
+    # the push. Keep them on any $var directly followed by a non-ASCII glyph.
+    log "$label: pushing ${branch}…"
     ( cd "$worktree" && git push -u origin "$branch" ) >/dev/null 2>&1 \
       || { err "$label: push failed — resolve it and re-run."; return 1; }
   fi

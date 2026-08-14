@@ -695,21 +695,48 @@ setup_dependencies() {
   # host Valet's Laravel driver maps /storage/<x> to storage/app/public/<x>
   # internally, but the workspace nginx block serves static files straight
   # from public/ — and a fresh worktree has no public/storage link (gitignored,
-  # `artisan storage:link` never ran), so every image 404s. Link it to the MAIN
-  # repo's storage/app/public: the worktree shares the main DB, so its file
-  # records point at main's uploads.
+  # `artisan storage:link` never ran), so every image 404s. Link it to the
+  # WORKTREE's OWN storage/app/public — the dir Laravel actually writes to
+  # (filesystem roots resolve against base_path, i.e. the worktree), NOT the
+  # main repo's: a main-pointing link serves main's old files while every
+  # upload made IN the workspace lands in the worktree's storage and 404s the
+  # moment it's saved. Pre-existing uploads (the shared main DB's records
+  # point at files uploaded via main) are copied in below, so both old and
+  # fresh images resolve.
   local wt_pub_storage="$WT_BACKEND/public/storage"
-  if [[ -L "$wt_pub_storage" && ! -e "$wt_pub_storage" ]]; then
-    warn "public/storage is a dangling symlink ($(readlink "$wt_pub_storage")) — relinking."
+  local wt_storage_pub="$WT_BACKEND/storage/app/public"
+  # Heal a link that is aimed anywhere else (what earlier ws versions and the
+  # legacy post-checkout hook created) OR that no longer resolves, so a plain
+  # `ws serve` repairs existing workspaces too. Testing the target alone would
+  # leave a correctly-aimed link dangling when the storage dir went away, and
+  # report it as healthy.
+  local link_target=""
+  if [[ -L "$wt_pub_storage" ]]; then
+    link_target="$(readlink "$wt_pub_storage")"
+  fi
+  if [[ -n "$link_target" ]] \
+    && { [[ "$link_target" != "$wt_storage_pub" ]] || [[ ! -e "$wt_pub_storage" ]]; }; then
+    warn "public/storage -> $link_target is wrong or dangling — relinking to the worktree's own storage."
     run_cmd rm -f "$wt_pub_storage"
   fi
   if [[ -e "$wt_pub_storage" ]]; then
-    vlog "public/storage already present (skipping)."
-  elif [[ ! -d "$BACKEND_REPO/storage/app/public" ]]; then
-    warn "Main backend has no storage/app/public — /storage URLs (images) will 404."
+    vlog "public/storage already present and correctly targeted (skipping)."
   else
-    run_cmd ln -s "$BACKEND_REPO/storage/app/public" "$wt_pub_storage"
-    vlog "Linked public/storage -> main storage/app/public (shared uploads)."
+    run_cmd mkdir -p "$wt_storage_pub"
+    # Seed main's existing uploads into the worktree. -n never clobbers a
+    # file the worktree already wrote, so re-seeding after a heal is safe.
+    # Best-effort (`|| true`): newer macOS cp exits 1 whenever -n skips a
+    # file — the EXPECTED case on a heal — so its status can't gate serve.
+    if [[ ! -d "$BACKEND_REPO/storage/app/public" ]]; then
+      warn "Main backend has no storage/app/public — pre-existing uploads will 404 in this workspace."
+    elif "$DRY_RUN"; then
+      printf '[dry-run] cp -Rn %s/. %s/ (seed main uploads)\n' "$BACKEND_REPO/storage/app/public" "$wt_storage_pub"
+    else
+      cp -Rn "$BACKEND_REPO/storage/app/public/." "$wt_storage_pub/" 2>/dev/null || true
+      vlog "Seeded main's uploads into worktree storage/app/public."
+    fi
+    run_cmd ln -s "$wt_storage_pub" "$wt_pub_storage"
+    vlog "Linked public/storage -> worktree storage/app/public (uploads served from the worktree)."
   fi
 
   # Laravel: ensure writable runtime dirs and drop any stale cached config.

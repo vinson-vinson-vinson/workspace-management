@@ -168,7 +168,11 @@ prepare_frontend_env() {
   set_env_var "$wt_env" HOST "127.0.0.1"
   set_env_var "$wt_env" PORT "$port"
   apply_storage_prefix "$wt_env"
-  sed -i '' -E "/^ECHO_HOST_URL=/!s#https://${BASE_DOMAIN_RE}#https://${host}#g" "$wt_env"
+  # Match either scheme and put back the one that was there: BASE_URL is http://
+  # in main's .env because that exact string is the registered OAuth redirect
+  # URI. Forcing https here breaks the login round-trip, and matching only
+  # https leaves http:// entries pointed at main's host.
+  sed -i '' -E "/^ECHO_HOST_URL=/!s#(https?)://${BASE_DOMAIN_RE}#\1://${host}#g" "$wt_env"
   vlog "Frontend env ready: $dir (.env, PORT=$port, host=$host)"
   return 0
 }
@@ -187,7 +191,7 @@ prepare_backend_env() {
     return 0
   fi
   cp "$main_env" "$wt_env"
-  sed -i '' -E "s#https://${BASE_DOMAIN_RE}#https://${host}#g" "$wt_env"
+  sed -i '' -E "s#(https?)://${BASE_DOMAIN_RE}#\1://${host}#g" "$wt_env"
   vlog "Backend env ready: reuses main DB, APP_URL=https://${host}"
 }
 

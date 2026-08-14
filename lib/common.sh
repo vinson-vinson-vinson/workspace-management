@@ -406,6 +406,9 @@ load_config() {
   TEST_DB_HOST="${TEST_DB_HOST:-127.0.0.1}"
   TEST_DB_USER="${TEST_DB_USER:-root}"
   TEST_DB_PASSWORD="${TEST_DB_PASSWORD:-}"
+  # memory_limit handed to php for `ws test`. The CLI php.ini default (often
+  # 128M) runs out partway through a full suite.
+  TEST_MEMORY_LIMIT="${TEST_MEMORY_LIMIT:-1G}"
   # Terminal opened for post-create commands (e.g. yarn serve-*, an agent).
   TERMINAL_APP="${TERMINAL_APP:-terminal}"
   # Set by `ws create` when it opens the terminals itself (see cmd_create).

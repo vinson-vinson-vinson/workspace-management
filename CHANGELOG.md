@@ -9,6 +9,12 @@ when a release is tagged.
 
 ## [Unreleased]
 
+### Added
+- `TEST_MEMORY_LIMIT` (default `1G`): the `memory_limit` `ws test` passes to
+  php. The CLI php.ini default is often 128M, which a full suite exhausts
+  partway through — surfacing as an "Allowed memory size exhausted" fatal
+  rather than a test failure.
+
 ### Fixed
 - `ws mr` aborted with `branch\xe2: unbound variable` instead of pushing, so an
   MR could only be opened after pushing the branch by hand. The log line before
@@ -21,6 +27,12 @@ when a release is tagged.
   behind "push failed — resolve it and re-run", which named no cause and left
   nothing to act on. The push still runs once; its output is captured and
   replayed only on failure.
+- `ws serve` now preserves the URL scheme when pointing a workspace `.env` at
+  its own host, instead of matching `https://` only. An `http://` entry — which
+  is how `BASE_URL` is written, because that exact string is the registered
+  OAuth redirect URI — was left pointing at the main host, so the workspace
+  authenticated against main and login or API calls failed in ways that look
+  like anything but an env problem.
 
 ## [2.17.0] — 2026-08-12
 

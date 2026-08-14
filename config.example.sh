@@ -194,6 +194,11 @@ TEST_DB_HOST="127.0.0.1"
 TEST_DB_USER="root"
 TEST_DB_PASSWORD=""
 
+# memory_limit passed to php for `ws test`. The CLI php.ini default (often
+# 128M) is exhausted partway through a full suite, which surfaces as an
+# "Allowed memory size exhausted" fatal rather than a test failure.
+TEST_MEMORY_LIMIT="1G"
+
 # ------------------------------ serving (ws serve) ---------------------------
 # `ws serve` makes a task worktree reachable at <sub>.$BASE_DOMAIN using Laravel
 # Valet's nginx + wildcard cert. If you don't use `ws serve` you can leave this

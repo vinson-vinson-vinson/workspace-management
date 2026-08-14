@@ -90,12 +90,14 @@ cmd_test() {
     || { err "Could not ensure test DB '$db' — refusing to fall back to the shared one."; exit 1; }
 
   if "$DRY_RUN"; then
-    printf '[dry-run] cd %s && DB_DATABASE=%s php vendor/bin/phpunit %s\n' \
-      "$wt_backend" "$db" "$*"
+    printf '[dry-run] cd %s && DB_DATABASE=%s php -d memory_limit=%s vendor/bin/phpunit %s\n' \
+      "$wt_backend" "$db" "$TEST_MEMORY_LIMIT" "$*"
     exit 0
   fi
 
   log "Running suite against isolated DB: $db"
   cd "$wt_backend"
-  DB_DATABASE="$db" exec php vendor/bin/phpunit "$@"
+  # The CLI php.ini limit is whatever the machine happens to have; a full suite
+  # run exhausts a default 128M long before it finishes.
+  DB_DATABASE="$db" exec php -d memory_limit="$TEST_MEMORY_LIMIT" vendor/bin/phpunit "$@"
 }

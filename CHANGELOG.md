@@ -17,9 +17,10 @@ when a release is tagged.
   workspace 404 the moment it was stored — while old main-side files kept
   serving. serve seeds main's existing uploads into the worktree once
   (no-clobber copy, so the shared main DB's older records still resolve) and
-  heals a wrong-target link — including the one earlier ws versions and the
-  legacy post-checkout hook created — on every run, so a plain `ws serve`
-  repairs existing workspaces.
+  heals a link that is wrongly aimed — including the one earlier ws versions
+  and the legacy post-checkout hook created — or that no longer resolves, on
+  every run, so a plain `ws serve` repairs existing workspaces.
+
 ## [2.17.0] — 2026-08-12
 
 ### Added

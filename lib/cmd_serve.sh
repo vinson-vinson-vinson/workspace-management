@@ -701,14 +701,21 @@ setup_dependencies() {
   # fresh images resolve.
   local wt_pub_storage="$WT_BACKEND/public/storage"
   local wt_storage_pub="$WT_BACKEND/storage/app/public"
-  # Heal a link with ANY other target — dangling, or aimed at the main repo
-  # (what earlier ws versions and the legacy post-checkout hook created) —
-  # unconditionally, so a plain `ws serve` repairs existing workspaces too.
-  if [[ -L "$wt_pub_storage" && "$(readlink "$wt_pub_storage")" != "$wt_storage_pub" ]]; then
-    warn "public/storage points at $(readlink "$wt_pub_storage") — relinking to the worktree's own storage."
+  # Heal a link that is aimed anywhere else (what earlier ws versions and the
+  # legacy post-checkout hook created) OR that no longer resolves, so a plain
+  # `ws serve` repairs existing workspaces too. Testing the target alone would
+  # leave a correctly-aimed link dangling when the storage dir went away, and
+  # report it as healthy.
+  local link_target=""
+  if [[ -L "$wt_pub_storage" ]]; then
+    link_target="$(readlink "$wt_pub_storage")"
+  fi
+  if [[ -n "$link_target" ]] \
+    && { [[ "$link_target" != "$wt_storage_pub" ]] || [[ ! -e "$wt_pub_storage" ]]; }; then
+    warn "public/storage -> $link_target is wrong or dangling — relinking to the worktree's own storage."
     run_cmd rm -f "$wt_pub_storage"
   fi
-  if [[ -e "$wt_pub_storage" || -L "$wt_pub_storage" ]]; then
+  if [[ -e "$wt_pub_storage" ]]; then
     vlog "public/storage already present and correctly targeted (skipping)."
   else
     run_cmd mkdir -p "$wt_storage_pub"

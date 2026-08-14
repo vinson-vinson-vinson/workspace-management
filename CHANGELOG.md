@@ -17,6 +17,10 @@ when a release is tagged.
   the variable name in a UTF-8 locale. That name is unset, which `set -u` makes
   fatal. Braced to `${branch}`; this was the only such interpolation in the
   tree.
+- A failed push in `ws mr` now prints git's own output instead of swallowing it
+  behind "push failed — resolve it and re-run", which named no cause and left
+  nothing to act on. The push still runs once; its output is captured and
+  replayed only on failure.
 
 ## [2.17.0] — 2026-08-12
 

@@ -118,8 +118,13 @@ _mr_for_repo() {
     # `branch\xe2` — unset, which `set -u` turns into a fatal error right before
     # the push. Keep them on any $var directly followed by a non-ASCII glyph.
     log "$label: pushing ${branch}…"
-    ( cd "$worktree" && git push -u origin "$branch" ) >/dev/null 2>&1 \
-      || { err "$label: push failed — resolve it and re-run."; return 1; }
+    local push_out
+    if ! push_out="$( cd "$worktree" && git push -u origin "$branch" 2>&1 )"; then
+      err "$label: push failed —"
+      printf '%s\n' "$push_out" | sed 's/^/    /' >&2
+      err "$label: resolve it and re-run 'ws mr'."
+      return 1
+    fi
   fi
 
   # Already an MR for this branch? Open it instead of making a second.

@@ -9,6 +9,19 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.19.0] — 2026-08-14
+
+### Changed
+- `ws create` picks a new workspace's color by weighted random over the
+  more-isolated half of the palette, instead of the single farthest-point
+  color. Each unused color is scored by its distance to the colors already
+  live, ranked, the top half kept, and one drawn at random from that half —
+  so accents stay well spread from what's live without the pick being
+  deterministic. The old strict argmax could only ever return ~7 of the 25
+  colors (max-min RGB distance is biased toward the palette's primary-cube
+  corners), so back-to-back creates cycled the same handful of hues; all 25
+  are now reachable.
+
 ## [2.18.0] — 2026-08-14
 
 ### Added

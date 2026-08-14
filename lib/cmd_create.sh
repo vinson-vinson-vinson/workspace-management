@@ -342,10 +342,13 @@ _rand_below() {
 }
 
 # Neon palette: 25 evenly-spaced hues at high saturation (HSL 90/61). A new
-# workspace gets the unused color FARTHEST (max-min RGB distance) from every
-# color already in use, so each accent is as distinct as possible from the
-# others — separation stays maximal at any count (~36 deg apart at 10 live,
-# ~18 deg at 20). Recycles only once more than 25 are live at the same time.
+# workspace's color is drawn at RANDOM from the more-isolated HALF of the unused
+# colors: each unused color is scored by the distance (min squared RGB) to the
+# colors already live, ranked most-isolated first, the top half kept, and one of
+# those picked at random. Keeps accents well spread without always returning the
+# same argmax (which in RGB is biased toward the palette's primary-cube corners,
+# so a plain farthest-point pick cycled the same 5-7 colors). Recycles only once
+# more than 25 are live at the same time.
 random_workspace_color() {
   local -a palette=(
     '#f54242' '#f56d42' '#f59842' '#f5c342' '#f5ee42'
@@ -385,10 +388,11 @@ random_workspace_color() {
     c="${c#\#}"; ur+=($((16#${c:0:2}))); ug+=($((16#${c:2:2}))); ub+=($((16#${c:4:2})))
   done
 
-  # Farthest-point: pick the candidate whose NEAREST used color is the farthest
-  # away — maximise the minimum squared RGB distance. Ties broken at random.
-  local best=-1 cr cg cb i mind d dr dg db h
-  local -a winners=()
+  # Score each candidate by its NEAREST used color (min squared RGB distance),
+  # then rank most-isolated first and keep the top half — a weighted shortlist
+  # of the colors most distinct from what's live.
+  local cr cg cb i mind d dr dg db h
+  local -a scored=()
   for c in "${cand[@]}"; do
     h="${c#\#}"; cr=$((16#${h:0:2})); cg=$((16#${h:2:2})); cb=$((16#${h:4:2}))
     mind=-1
@@ -397,10 +401,17 @@ random_workspace_color() {
       d=$((dr * dr + dg * dg + db * db))
       if (( mind < 0 || d < mind )); then mind=$d; fi
     done
-    if (( mind > best )); then best=$mind; winners=("$c")
-    elif (( mind == best )); then winners+=("$c"); fi
+    scored+=("$mind $c")
   done
-  printf '%s' "${winners[$(_rand_below "${#winners[@]}")]}"
+  # Rank by score (desc); slice off the more-isolated half (ceil, so always >=1).
+  local -a ranked=()
+  local line
+  while IFS= read -r line; do ranked+=("${line#* }"); done \
+    < <(printf '%s\n' "${scored[@]}" | sort -rn -k1,1)
+  local half=$(( (${#ranked[@]} + 1) / 2 ))
+  local -a top=( "${ranked[@]:0:$half}" )
+  # Pick one of that half at random.
+  printf '%s' "${top[$(_rand_below "${#top[@]}")]}"
 }
 
 cmd_create() {

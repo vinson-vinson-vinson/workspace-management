@@ -174,13 +174,14 @@ input that ends in an exec, so the verb is a whitelist (`create`, `open`,
 touches a command line. `remove` is deliberately not linkable — one click should
 never be able to tear a workspace down.
 
-Two details worth knowing: the app hard-codes the path of this checkout, so
-re-run `ws url --install` if you move it; and the first link asks macOS for
-permission to control your terminal (System Settings › Privacy & Security ›
-Automation). `WSM_URL_SCHEME` and `WSM_URL_APP` override the scheme and the
-bundle location — Launch Services only routes links to an app that lives in
-`~/Applications` or `/Applications`. Remove it all again with
-`ws url --uninstall`.
+One detail worth knowing: the app hard-codes the path of this checkout, so
+re-run `ws url --install` if you move it. Following a link needs no permission
+grant — the command runs through a generated `.command` file opened with
+`open`, not an AppleScript Apple Event, which would put a one-time Automation
+consent dialog between the click and the window. `WSM_URL_SCHEME` and
+`WSM_URL_APP` override the scheme and the bundle location — Launch Services
+only routes links to an app that lives in `~/Applications` or `/Applications`.
+Remove it all again with `ws url --uninstall`.
 
 The other deep link needs no handler at all: a served workspace is a plain
 `https://<sub>.<domain>` URL, which `ws list` and `ws url --link` both print.

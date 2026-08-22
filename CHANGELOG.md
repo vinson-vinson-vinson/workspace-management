@@ -30,7 +30,12 @@ when a release is tagged.
   window — so a ClickUp task or an MR description can carry a link straight to
   its workspace. `ws url --link <slug>` prints a link to paste (plus the served
   https URL), `--print` resolves one without running it, `--uninstall` removes
-  the app. Links are treated as untrusted: the verb is a whitelist and every
+  the app. A followed link runs its command in a Terminal window opened via a
+  generated `.command` file rather than an AppleScript `do script`, so it needs
+  no Automation consent — an Apple Event from the handler app would put a modal
+  permission dialog between the click and the window, and silence the error
+  path (which also posts through osascript) if it were denied. Links are
+  treated as untrusted: the verb is a whitelist and every
   field is character-class validated before it reaches a command line, and
   `remove` is not linkable at all. `?remote=<name>` picks the remote on create
   and open links; it takes a remote name, never a URL.

@@ -322,6 +322,9 @@ run_quiet() {
 # helpers below safe under `set -u` before parsing runs.
 DRY_RUN=false
 VERBOSE=false
+# `--remote <name>` (or a deep link's ?remote=): applies to BOTH repos for this
+# one run, overriding FRONTEND_REMOTE/BACKEND_REMOTE. Empty = use the config.
+REMOTE_OVERRIDE=""
 
 run_cmd() {
   if "$DRY_RUN"; then printf '[dry-run] %s\n' "$*"; else "$@"; fi
@@ -372,6 +375,11 @@ load_config() {
   # defaults next to the command and is gitignored, like config.sh.
   WSM_HOOKS_DIR="${WSM_HOOKS_DIR:-$WSM_HOME/hooks}"
   MAIN_WORKSPACE_FILE="${MAIN_WORKSPACE_FILE:-}"
+  # Git remote per repo — the two sides can live on different remotes (a fork
+  # of one, upstream for the other), so this is not one global setting. Both
+  # default to "origin", which is what every command used to hard-code.
+  FRONTEND_REMOTE="${FRONTEND_REMOTE:-origin}"
+  BACKEND_REMOTE="${BACKEND_REMOTE:-origin}"
   SYNC_MAIN_WORKSPACE="${SYNC_MAIN_WORKSPACE:-true}"
   # IDE per repo role (see config.example.sh); defaulted and validated here so
   # configs predating the settings keep working and typos fail loudly.
@@ -704,6 +712,45 @@ worktree_branch() {
   git -C "$1" symbolic-ref --quiet --short HEAD 2>/dev/null || true
 }
 
+# ------------------------------- git remotes --------------------------------
+# The remote name to fetch/push a given repo through. Takes any path on either
+# side — a main clone or one of its worktrees — because a worktree is named
+# after its repo's directory, and resolves:
+#
+#   --remote <name> (REMOTE_OVERRIDE)  ->  BACKEND_REMOTE / FRONTEND_REMOTE
+#
+# Nothing here validates that the remote exists; require_remote does, at the
+# point where a wrong name would otherwise surface as a raw git error.
+remote_for_repo() {
+  local repo="$1"
+  [[ -z "$REMOTE_OVERRIDE" ]] || { printf '%s' "$REMOTE_OVERRIDE"; return 0; }
+  case "$repo" in
+    "$BACKEND_REPO"|*/"$BACKEND_DIR_NAME")   printf '%s' "$BACKEND_REMOTE" ;;
+    "$FRONTEND_REPO"|*/"$FRONTEND_DIR_NAME") printf '%s' "$FRONTEND_REMOTE" ;;
+    *)
+      # Neither name matched (an unusual FRONTEND_REPO basename, say). The
+      # frontend remote is the better guess than a hard-coded "origin", which
+      # would be wrong for everyone who configured a remote at all.
+      vlog "Can't tell which side '$repo' is — using FRONTEND_REMOTE ($FRONTEND_REMOTE)."
+      printf '%s' "$FRONTEND_REMOTE" ;;
+  esac
+}
+
+# Fail with the repo's actual remote list rather than letting a typo'd name
+# reach git, where it reads as "'upstream' does not appear to be a git
+# repository" and looks like a network problem.
+require_remote() {
+  local repo="$1" remote="$2"
+  git -C "$repo" remote get-url "$remote" >/dev/null 2>&1 && return 0
+  spin_stop
+  err "No remote named '$remote' in $repo."
+  printf '  %sremotes here:%s %s\n' "$C_DIM" "$C_RESET" \
+    "$(git -C "$repo" remote 2>/dev/null | tr '\n' ' ' | sed 's/ $//')" >&2
+  printf '  %sset FRONTEND_REMOTE/BACKEND_REMOTE in config.sh, or pass --remote.%s\n' \
+    "$C_DIM" "$C_RESET" >&2
+  exit 1
+}
+
 # True if BRANCH is one of the protected base ("main") branches we must never
 # serve over or remove.
 is_protected_branch() {
@@ -713,6 +760,56 @@ is_protected_branch() {
     "$FRONTEND_BASE_BRANCH"|"$BACKEND_BASE_BRANCH"|main|master) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+# ---------------------------- slug normalisation ----------------------------
+# `ws create CU-1234_My-Feature` does not produce a directory spelled that way,
+# so anything that has to FIND the workspace an argument refers to (`ws open`,
+# a deep link) must normalise it the same way create does. Shared here for that
+# reason — the two must never drift.
+
+normalize_task_id() {
+  local raw="$1" body
+  body="$(printf '%s' "$raw" | tr -d '[:space:]')"
+  # Strip the prefix in either case (e.g. CU- / cu-) before re-adding it.
+  body="${body#"${TASK_ID_PREFIX}"-}"
+  body="${body#"${TASK_ID_PREFIX_LC}"-}"
+  body="$(printf '%s' "$body" | tr -cd '[:alnum:]-')"
+  if [[ -z "$body" ]]; then
+    err "Invalid task id: '$raw'"; exit 1
+  fi
+  printf '%s-%s' "$TASK_ID_PREFIX" "$body"
+}
+
+slugify_name() {
+  local raw="$1" out
+  out="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]')"
+  out="$(printf '%s' "$out" | sed -E 's/[[:space:]_]+/-/g')"
+  out="$(printf '%s' "$out" | sed -E 's/[^a-z0-9-]//g')"
+  out="$(printf '%s' "$out" | sed -E 's/-+/-/g; s/^-+//; s/-+$//')"
+  if [[ -z "$out" ]]; then
+    err "Feature name produces empty slug: '$raw'"; exit 1
+  fi
+  printf '%s' "$out"
+}
+
+# The canonical workspace slug for whatever the user typed: the task form
+# (<PREFIX>-<id>_<feature>, prefix case-insensitive) keeps a normalised task id
+# and a slugified feature name; anything else is slugified whole.
+workspace_slug_for() {
+  local combined="$1" combined_lc task="" feature="$1" name_slug
+  combined_lc="$(printf '%s' "$combined" | tr '[:upper:]' '[:lower:]')"
+  if [[ "$combined_lc" == "${TASK_ID_PREFIX_LC}"-*_* ]]; then
+    task="${combined%%_*}"
+    feature="${combined#*_}"
+    [[ -n "$feature" ]] || { err "Missing feature name after '_' in '$combined'"; exit 1; }
+  fi
+  name_slug="$(slugify_name "$feature")"
+  if [[ -n "$task" ]]; then
+    printf '%s_%s' "$(normalize_task_id "$task")" "$name_slug"
+  else
+    printf '%s' "$name_slug"
+  fi
 }
 
 # Path to a workspace's VS Code .code-workspace file. It lives INSIDE the session

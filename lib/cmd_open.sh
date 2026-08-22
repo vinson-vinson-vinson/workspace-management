@@ -1,14 +1,18 @@
 # shellcheck shell=bash
 # -----------------------------------------------------------------------------
 # lib/cmd_open.sh — `workspaces open`: open a workspace in the configured
-# IDE(s) by its `ws list` index (or slug). Just the editor — no serving, no
-# side effects.
+# IDE(s) by its `ws list` index (or slug). Just the editor — no serving.
+#
+# One exception to "no side effects": a slug with no workspace behind it is
+# created first (--no-create opts out). That is what makes an `ws://open/<slug>`
+# deep link portable — the person clicking it doesn't have your session dir, and
+# a link that errors out on every machine but yours is not a link.
 # -----------------------------------------------------------------------------
 
 cmd_open_usage() {
   cat <<'USAGE'
 Usage:
-  ws open <N | SLUG>
+  ws open <N | SLUG> [--remote <name>] [--base <branch>] [--no-create] [--dry-run]
 
 Opens the workspace in the IDE(s) named by FRONTEND_IDE / BACKEND_IDE in
 config.sh — vscode (the default), phpstorm, webstorm, or zed. With the SAME
@@ -22,13 +26,26 @@ too. Index 0 (or "MAIN") is the main workspace: with VS Code it opens
 MAIN_WORKSPACE_FILE from config.sh, or — if unset/missing — both main repos in
 one new window.
 
+A SLUG with no workspace behind it is created first (`ws create <slug>`), then
+opened. An index never creates anything: it can only name a workspace that
+already exists.
+
 Options:
-  -h, --help    Show this help.
+  --remote <name>  Fetch the branch through this remote in both repos when the
+                   workspace has to be created (overrides FRONTEND_REMOTE /
+                   BACKEND_REMOTE for that run).
+  --base <branch>  Base branch to cut from if the branch is nowhere yet — same
+                   meaning as `ws create <slug> <base>`.
+  --no-create      Fail on an unknown slug instead of creating it.
+  --dry-run        Print actions without executing them.
+  -v, --verbose    Narrate each step.
+  -h, --help       Show this help.
 
 Examples:
   ws open 0
   ws open 2
   ws open CU-1234_my-feature
+  ws open CU-1234_my-feature --remote upstream
 USAGE
 }
 
@@ -44,10 +61,34 @@ open_main_workspace() {
   open_workspace_editors "$FRONTEND_REPO" "$BACKEND_REPO" "$workspace_file" "" "MAIN"
 }
 
+# Hand an unknown slug to `ws create` — a separate process, so the create flow
+# (fetch, worktrees, .code-workspace, terminals) runs exactly as it does on its
+# own, with no half-shared state between the two commands.
+open_by_creating() {
+  local slug="$1" base="$2"
+  local -a args=("$slug")
+  [[ -n "$base" ]] && args+=("$base")
+  [[ -n "$REMOTE_OVERRIDE" ]] && args+=(--remote "$REMOTE_OVERRIDE")
+  "$DRY_RUN" && args+=(--dry-run)
+  log "No workspace '$slug' yet — creating it${REMOTE_OVERRIDE:+ from remote $REMOTE_OVERRIDE}."
+  "$WSM_HOME/workspaces" create "${args[@]}" \
+    || { err "Could not create '$slug' — not opening anything."; exit 1; }
+}
+
 cmd_open() {
-  local target=""
+  local target="" base="" create_missing=true
+  DRY_RUN=false
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --remote)
+        [[ $# -ge 2 && -n "$2" ]] || { err "--remote needs a remote name."; exit 1; }
+        REMOTE_OVERRIDE="$2"; shift 2 ;;
+      --base)
+        [[ $# -ge 2 && -n "$2" ]] || { err "--base needs a branch name."; exit 1; }
+        base="$2"; shift 2 ;;
+      --no-create) create_missing=false; shift ;;
+      --dry-run) DRY_RUN=true; shift ;;
+      -v|--verbose) VERBOSE=true; shift ;;
       -h|--help) cmd_open_usage; exit 0 ;;
       -*) err "Unknown option: $1"; cmd_open_usage; exit 1 ;;
       *)
@@ -86,8 +127,24 @@ cmd_open() {
   else
     slug="$target"
     if [[ ! -d "$WORKSPACES_ROOT/$slug" ]]; then
-      err "No workspace named '$slug' (see 'ws list')."
-      exit 1
+      # `ws create` normalises what it is handed (canonical task id, slugified
+      # feature name), so the directory is often not spelled like the argument —
+      # CU-1234_My-Feature lives at CU-1234_my-feature. Resolve before deciding
+      # anything is missing, or a link would create a duplicate of a workspace
+      # that is already there.
+      local canonical; canonical="$(workspace_slug_for "$slug")"
+      if [[ -d "$WORKSPACES_ROOT/$canonical" ]]; then
+        vlog "'$slug' resolves to workspace '$canonical'."
+        slug="$canonical"
+      else
+        "$create_missing" || { err "No workspace named '$slug' (see 'ws list')."; exit 1; }
+        open_by_creating "$slug" "$base"
+        slug="$canonical"
+        # create opened the IDE itself unless the config told it not to; only
+        # then does the normal open path below still have work to do.
+        "$NO_OPEN_AFTER_CREATE" || return 0
+        "$DRY_RUN" && return 0      # nothing was created, so nothing to open
+      fi
     fi
   fi
 

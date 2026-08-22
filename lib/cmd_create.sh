@@ -8,7 +8,8 @@
 cmd_create_usage() {
   cat <<'USAGE'
 Usage:
-  ws create <NAME_OR_TASK_AND_NAME> [BASE_BRANCH[@REMOTE]] [-n|--neanderthal] [--dry-run]
+  ws create <NAME_OR_TASK_AND_NAME> [BASE_BRANCH[@REMOTE]] [--remote NAME]
+            [-n|--neanderthal] [--dry-run]
 
 Rules:
   - With task:    CU-<taskId>_<feature-name>  -> slug/branch CU-<taskId>_<feature-name>
@@ -16,10 +17,10 @@ Rules:
   - BASE_BRANCH bases the new workspace branches on an existing branch instead
     of the configured base (main) — e.g. to stack follow-up work on a feature
     still in review. Applied per repo where the branch exists (locally or on
-    origin); a repo without it falls back to its configured base, with a
+    its remote); a repo without it falls back to its configured base, with a
     warning. Missing in both repos is an error.
-  - BASE_BRANCH@REMOTE takes the branch from that git remote instead of
-    origin — e.g. a bot branch pushed to a fork. The suffix is only treated
+  - BASE_BRANCH@REMOTE takes the branch from that git remote instead of the
+    repo's own one — e.g. a bot branch pushed to a fork. The suffix is only treated
     as a remote when a remote of that name is configured in one of the repos;
     the branch is fetched from it and the new branches are cut from
     <REMOTE>/<BASE_BRANCH>.
@@ -29,9 +30,13 @@ Rules:
     it finishes, one terminal per default app running `yarn serve-<app>`.
 
 Options:
+  --remote NAME        Fetch/track branches through this remote in BOTH repos,
+                       overriding FRONTEND_REMOTE/BACKEND_REMOTE for this run.
+                       BASE_BRANCH@REMOTE still wins for the base branch alone.
   -n, --neanderthal    Bare workspace: skip the auto-started serve/dev-server
                        terminals (you run everything by hand, like it's 2024).
   --dry-run            Print actions without executing them.
+  -v, --verbose        Narrate each step.
   -h, --help           Show this help.
 
 Examples:
@@ -40,6 +45,7 @@ Examples:
   ws create form-timing cursor/delayed-legal-documents-df2a@github
   ws create MyNewProject --neanderthal
   ws create CU-1234_Test-Project --dry-run
+  ws create CU-1234_Test-Project --remote upstream
 USAGE
 }
 
@@ -69,7 +75,7 @@ slugify_name() {
 }
 
 resolve_base_ref() {
-  local repo="$1" branch="$2" remote="${3:-}"
+  local repo="$1" branch="$2" remote="${3:-}" default_remote
   # Explicit BASE_BRANCH@REMOTE: the user named the remote, so only its
   # (freshly fetched) remote-tracking ref counts — no local fallback.
   if [[ -n "$remote" ]]; then
@@ -81,19 +87,22 @@ resolve_base_ref() {
     if "$DRY_RUN"; then printf '%s/%s' "$remote" "$branch"; return; fi
     err "Base branch '$branch' not found on remote '$remote' in $repo"; exit 1
   fi
-  # USE_REMOTE_MAIN flips the preference: base on origin/<branch> (freshly
+  # No explicit @REMOTE: the repo's own remote (FRONTEND_REMOTE/BACKEND_REMOTE,
+  # or --remote), which is "origin" unless configured otherwise.
+  default_remote="$(remote_for_repo "$repo")"
+  # USE_REMOTE_MAIN flips the preference: base on <remote>/<branch> (freshly
   # fetched by cmd_create) instead of the local checkout, falling back to the
   # local branch only when no remote-tracking ref exists.
-  if "$USE_REMOTE_MAIN" && git -C "$repo" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
-    printf 'origin/%s' "$branch"; return
+  if "$USE_REMOTE_MAIN" && git -C "$repo" show-ref --verify --quiet "refs/remotes/$default_remote/$branch"; then
+    printf '%s/%s' "$default_remote" "$branch"; return
   fi
   if git -C "$repo" show-ref --verify --quiet "refs/heads/$branch"; then
     printf '%s' "$branch"; return
   fi
-  if git -C "$repo" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
-    printf 'origin/%s' "$branch"; return
+  if git -C "$repo" show-ref --verify --quiet "refs/remotes/$default_remote/$branch"; then
+    printf '%s/%s' "$default_remote" "$branch"; return
   fi
-  err "Base branch '$branch' not found in $repo (local or origin/$branch)"; exit 1
+  err "Base branch '$branch' not found in $repo (local or $default_remote/$branch)"; exit 1
 }
 
 worktree_registered() {
@@ -104,11 +113,12 @@ branch_exists_local() {
   git -C "$1" show-ref --verify --quiet "refs/heads/$2"
 }
 
-# Read-only check whether a branch exists on a remote (default origin). Uses
-# the already-fetched remote-tracking ref first, then a network query that
-# mutates nothing locally.
+# Read-only check whether a branch exists on a remote — an explicit one, or
+# the repo's configured remote. Uses the already-fetched remote-tracking ref
+# first, then a network query that mutates nothing locally.
 remote_branch_exists() {
-  local repo="$1" branch="$2" remote="${3:-origin}"
+  local repo="$1" branch="$2" remote="${3:-}"
+  [[ -n "$remote" ]] || remote="$(remote_for_repo "$repo")"
   if git -C "$repo" show-ref --verify --quiet "refs/remotes/$remote/$branch"; then
     return 0
   fi
@@ -119,7 +129,7 @@ remote_exists() {
   git -C "$1" remote get-url "$2" >/dev/null 2>&1
 }
 
-# True if BRANCH exists in REPO at all — locally or on origin.
+# True if BRANCH exists in REPO at all — locally or on its remote.
 branch_available() {
   branch_exists_local "$1" "$2" || remote_branch_exists "$1" "$2"
 }
@@ -129,7 +139,8 @@ branch_available() {
 BRANCH_ORIGIN=""
 
 add_worktree() {
-  local repo="$1" branch="$2" worktree_path="$3" base_ref="$4"
+  local repo="$1" branch="$2" worktree_path="$3" base_ref="$4" remote
+  remote="$(remote_for_repo "$repo")"
   if branch_exists_local "$repo" "$branch"; then
     vlog "Reusing existing local branch '$branch' in $repo"
     BRANCH_ORIGIN="reused existing local branch"
@@ -137,15 +148,15 @@ add_worktree() {
     return
   fi
   if remote_branch_exists "$repo" "$branch"; then
-    vlog "Checking out existing remote branch 'origin/$branch' in $repo"
-    BRANCH_ORIGIN="checked out from origin"
-    run_quiet git -C "$repo" fetch origin "$branch"
-    run_quiet git -C "$repo" worktree add --track -b "$branch" "$worktree_path" "origin/$branch"
+    vlog "Checking out existing remote branch '$remote/$branch' in $repo"
+    BRANCH_ORIGIN="checked out from $remote"
+    run_quiet git -C "$repo" fetch "$remote" "$branch"
+    run_quiet git -C "$repo" worktree add --track -b "$branch" "$worktree_path" "$remote/$branch"
     return
   fi
   vlog "Creating new branch '$branch' from '$base_ref' in $repo"
   BRANCH_ORIGIN="created from $base_ref"
-  # --no-track: when the base is origin/<base-branch> (USE_REMOTE_MAIN), git
+  # --no-track: when the base is <remote>/<base-branch> (USE_REMOTE_MAIN), git
   # would otherwise set THAT as upstream and the feature branch would look like
   # it pushes to main. No-op for a local base.
   run_quiet git -C "$repo" worktree add --no-track -b "$branch" "$worktree_path" "$base_ref"
@@ -418,12 +429,16 @@ cmd_create() {
   local positional=() combined=""
   DRY_RUN=false
   AUTO_SERVE=true
-  local TASK_INPUT="" FEATURE_NAME="" BASE_OVERRIDE=""
+  local BASE_OVERRIDE=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -n|--neanderthal) AUTO_SERVE=false; shift ;;
+      --remote)
+        [[ $# -ge 2 && -n "$2" ]] || { err "--remote needs a remote name."; exit 1; }
+        REMOTE_OVERRIDE="$2"; shift 2 ;;
       --dry-run)   DRY_RUN=true; shift ;;
+      -v|--verbose) VERBOSE=true; shift ;;
       -h|--help)   cmd_create_usage; exit 0 ;;
       --)
         shift
@@ -450,17 +465,6 @@ cmd_create() {
     fi
   fi
 
-  # One-argument task form: <PREFIX>-1234_MyProject (prefix case-insensitive).
-  local combined_lc
-  combined_lc="$(printf '%s' "$combined" | tr '[:upper:]' '[:lower:]')"
-  if [[ "$combined_lc" == "${TASK_ID_PREFIX_LC}"-*_* ]]; then
-    TASK_INPUT="${combined%%_*}"
-    FEATURE_NAME="${combined#*_}"
-    [[ -n "$FEATURE_NAME" ]] || { err "Missing feature name after '_' in '$combined'"; exit 1; }
-  else
-    FEATURE_NAME="$combined"
-  fi
-
   require_command git
   require_command sed
   # The IDE launcher(s) are only needed to open the workspace at the end.
@@ -468,20 +472,24 @@ cmd_create() {
   require_repo "$FRONTEND_REPO"
   require_repo "$BACKEND_REPO"
 
-  local name_slug branch_slug session_dir frontend_worktree backend_worktree
+  local branch_slug session_dir frontend_worktree backend_worktree
   local workspace_file workspace_color="" frontend_ref backend_ref
 
-  name_slug="$(slugify_name "$FEATURE_NAME")"
-  if [[ -n "$TASK_INPUT" ]]; then
-    branch_slug="$(normalize_task_id "$TASK_INPUT")_${name_slug}"
-  else
-    branch_slug="$name_slug"
-  fi
+  branch_slug="$(workspace_slug_for "$combined")"
 
   session_dir="$WORKSPACES_ROOT/$branch_slug"
   frontend_worktree="$session_dir/$FRONTEND_DIR_NAME"
   backend_worktree="$session_dir/$BACKEND_DIR_NAME"
   workspace_file="$(workspace_file_for "$branch_slug")"
+
+  # Both remotes up front: a typo'd --remote (or a wrong FRONTEND_REMOTE) must
+  # fail here, not halfway through with one worktree already added.
+  local fe_remote be_remote
+  fe_remote="$(remote_for_repo "$FRONTEND_REPO")"
+  be_remote="$(remote_for_repo "$BACKEND_REPO")"
+  require_remote "$FRONTEND_REPO" "$fe_remote"
+  require_remote "$BACKEND_REPO" "$be_remote"
+  vlog "Remotes: $FRONTEND_DIR_NAME -> $fe_remote, $BACKEND_DIR_NAME -> $be_remote"
 
   # Optional BASE_BRANCH argument: base the workspace on an existing branch
   # instead of the configured base — per repo, since a feature branch may only
@@ -520,7 +528,7 @@ cmd_create() {
     branch_available "$FRONTEND_REPO" "$BASE_OVERRIDE" && fe_has=true
     branch_available "$BACKEND_REPO" "$BASE_OVERRIDE" && be_has=true
     if ! "$fe_has" && ! "$be_has"; then
-      err "Base branch '$BASE_OVERRIDE' not found in either repo (local or origin)."
+      err "Base branch '$BASE_OVERRIDE' not found in either repo (local or on its remote)."
       exit 1
     fi
     if "$fe_has"; then fe_base="$BASE_OVERRIDE"; else
@@ -532,7 +540,7 @@ cmd_create() {
   fi
 
   # USE_REMOTE_MAIN promises the LIVE remote: refresh the remote-tracking refs
-  # first, or origin/<base-branch> would just mean "as of the last fetch". A
+  # first, or <remote>/<base-branch> would just mean "as of the last fetch". A
   # failed fetch (e.g. offline) degrades to that last-fetched state with a
   # warning rather than aborting. An explicit @REMOTE base is always fetched —
   # its remote-tracking ref may not exist locally at all yet.
@@ -543,8 +551,8 @@ cmd_create() {
   if "$fe_fetch" || "$be_fetch"; then
     local fetch_ok=true
     spin "fetching base branches"
-    ! "$fe_fetch" || run_quiet git -C "$FRONTEND_REPO" fetch "${fe_base_remote:-origin}" "$fe_base" || fetch_ok=false
-    ! "$be_fetch" || run_quiet git -C "$BACKEND_REPO" fetch "${be_base_remote:-origin}" "$be_base" || fetch_ok=false
+    ! "$fe_fetch" || run_quiet git -C "$FRONTEND_REPO" fetch "${fe_base_remote:-$fe_remote}" "$fe_base" || fetch_ok=false
+    ! "$be_fetch" || run_quiet git -C "$BACKEND_REPO" fetch "${be_base_remote:-$be_remote}" "$be_base" || fetch_ok=false
     if "$fetch_ok"; then
       spin_ok "base branches fetched"
     else
@@ -613,7 +621,7 @@ cmd_create() {
 
   run_cmd mkdir -p "$session_dir"
 
-  # Can be slow: may fetch from origin before adding each worktree.
+  # Can be slow: may fetch from the remote before adding each worktree.
   local fe_branch_origin be_branch_origin
   spin "creating worktrees"
   add_worktree "$FRONTEND_REPO" "$branch_slug" "$frontend_worktree" "$frontend_ref"

@@ -49,7 +49,7 @@ case "$subcommand" in
   -V|--version|version)
     printf 'workspaces %s\n' "$WSM_VERSION"
     ;;
-  create|list|mr|open|serve|share|remove|status|sync|test|trust|raccoon)
+  create|list|mr|open|serve|share|remove|status|sync|test|trust|raccoon|url)
     LOG_PREFIX="$subcommand"
     load_config
     # shellcheck source=/dev/null

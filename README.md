@@ -82,6 +82,7 @@ The essentials:
 | `FRONTEND_REPO` / `BACKEND_REPO` | Full paths to the main clones. |
 | `WORKSPACES_ROOT` | Where session worktrees are created. |
 | `FRONTEND_BASE_BRANCH` / `BACKEND_BASE_BRANCH` | Branch new worktrees are cut from. |
+| `FRONTEND_REMOTE` / `BACKEND_REMOTE` | Git remote each repo fetches from and pushes to (both default to `origin`). Per repo, so a forked frontend and an upstream backend both work. `--remote <name>` on `create`/`open`/`mr` overrides both for one run. |
 | `FRONTEND_IDE` / `BACKEND_IDE` | IDE each repo opens in: `vscode` (default), `phpstorm`, `webstorm`, or `zed`. Same value → one combined window; different values → separate windows per worktree. |
 | `TASK_ID_PREFIX` | Prefix that marks a "task" workspace (default `CU`, for ClickUp). |
 | `BASE_DOMAIN`, `ADMIN_PATH`, `PORT_RANGE_START`, `VALET_*` | `ws serve` routing. |
@@ -113,11 +114,12 @@ Everything is one command, `workspaces` (alias `ws`), with subcommands:
 | --- | --- |
 | `ws create <slug> [base[@remote]]` | Create (or reopen) a workspace: add both worktrees, write a `.code-workspace`, open the configured IDE(s) (`FRONTEND_IDE`/`BACKEND_IDE`, VS Code by default). An optional second argument bases the branches on an existing branch instead of the configured base; `branch@remote` takes it from another git remote (e.g. a bot branch on a GitHub fork). When that's VS Code, it auto-runs `ws serve` and then `yarn serve-<app>` per default app, each in its own terminal; `--neanderthal` skips those tasks. |
 | `ws list` (or bare `ws`) | List all workspaces, star the one you're in, link each served one to its landing URL. The `#` column numbers the rows for `ws open`. |
-| `ws open <N\|slug>` | Open a workspace by its `ws list` index (or slug) in the IDE(s) named by `FRONTEND_IDE`/`BACKEND_IDE` — VS Code by default, or PhpStorm/WebStorm/Zed. Same IDE on both sides → one combined window; different IDEs → each worktree opens separately. Index 0 (or `MAIN`) opens the main workspace (`MAIN_WORKSPACE_FILE`, or both main repos). Just the editor — no serving, no side effects. |
+| `ws open <N\|slug>` | Open a workspace by its `ws list` index (or slug) in the IDE(s) named by `FRONTEND_IDE`/`BACKEND_IDE` — VS Code by default, or PhpStorm/WebStorm/Zed. Same IDE on both sides → one combined window; different IDEs → each worktree opens separately. Index 0 (or `MAIN`) opens the main workspace (`MAIN_WORKSPACE_FILE`, or both main repos). A **slug with no workspace behind it is created first** (`--no-create` opts out; `--remote`/`--base` say where the branch comes from), which is what makes an `ws://open/<slug>` link work on a machine that has never seen that workspace. |
 | `ws serve [slug]` | Make a workspace reachable at `<sub>.<domain>` via Valet/nginx: rewrite envs, write the nginx block, install deps. Slug defaults to the current directory. Does **not** start dev servers — it prints the `yarn serve-*` commands. |
 | `ws remove [slug]` | Tear a workspace down safely: revert routing, remove worktrees, delete branches, clean the session dir. Refuses on unpushed work unless `--force`. Slug defaults to cwd. |
 | `ws test [slug] [args]` | Run the backend suite against the workspace's **own** MySQL test DB (created on demand; args pass through to phpunit), so concurrent runs in different workspaces can't `migrate:fresh` over each other. Fails closed: no isolated DB → no run. Slug defaults to cwd. |
 | `ws trust` | One-time sudoers rule (like `valet trust`) so `ws serve` can test/reload nginx without password prompts. Covers exactly `nginx -t` and `nginx -s reload`; never stores the password. `--revoke` removes it. |
+| `ws url` | Clickable `ws://` deep links: `--install` registers a tiny macOS handler app, `--link <slug>` prints a link to paste into a task or an MR. Following a link runs the matching `ws create`/`open`/`serve` in a new terminal window. See [Deep links](#deep-links). |
 | `ws sync` | Recompute each workspace's VS Code Source Control ignore-list so every window shows only its own two worktrees. Runs automatically on `create`/`remove`. |
 | `ws help` / `ws version` | Banner + command overview / print the version. |
 
@@ -133,6 +135,55 @@ ws                                           # list (bare `ws`)
 ws remove                                     # tear down (auto-detects slug from cwd)
 ws remove CU-1234_my-feature --force          # discard local-only work
 ```
+
+## Deep links
+
+`ws url --install` builds a small AppleScript app in `~/Applications` and
+registers it as the owner of the `ws://` scheme, so a link in a ClickUp task, an
+MR description or a chat message can open the workspace for that task:
+
+```bash
+ws url --install                                    # one-time
+ws url --link CU-1234_my-feature                    # -> ws://create/CU-1234_my-feature
+ws url --link CU-1234_my-feature --base CU-1200_parent
+ws url --link CU-1234_my-feature --verb open        # -> ws://open/CU-1234_my-feature
+ws url --link CU-1234_my-feature --verb open --remote upstream
+```
+
+| Link | Runs |
+| --- | --- |
+| `ws://create/<slug>?base=<branch>&remote=<name>&bare=1` | `ws create <slug> [branch] [--remote name] [--neanderthal]` |
+| `ws://open/<slug>?remote=<name>&base=<branch>` | `ws open <slug> [--remote name] [--base branch]` |
+| `ws://serve/<slug>?all-apps=1` | `ws serve <slug> [--all-apps]` |
+
+`remote` and `base` matter on an **open** link too, because opening a slug the
+machine doesn't have creates it first: they decide which remote the branch is
+fetched from and what it's cut from if it doesn't exist yet. `remote` is a
+remote *name* the repos already have (`FRONTEND_REMOTE`/`BACKEND_REMOTE`), never
+a URL — a link can pick between your remotes, it can't introduce one.
+
+The slug can also travel as a query field (`ws://open?slug=<slug>`), which is
+what most trackers produce when you build a link in their UI. Clicking a link
+opens a new terminal window (`TERMINAL_APP`) running the command, so you see its
+output and `serve` can still ask for sudo. `ws url '<link>' --print` resolves a
+link to the command without running it.
+
+**What a link cannot do.** A link that reaches you from outside is untrusted
+input that ends in an exec, so the verb is a whitelist (`create`, `open`,
+`serve`) and every field is validated against a strict character class before it
+touches a command line. `remove` is deliberately not linkable — one click should
+never be able to tear a workspace down.
+
+Two details worth knowing: the app hard-codes the path of this checkout, so
+re-run `ws url --install` if you move it; and the first link asks macOS for
+permission to control your terminal (System Settings › Privacy & Security ›
+Automation). `WSM_URL_SCHEME` and `WSM_URL_APP` override the scheme and the
+bundle location — Launch Services only routes links to an app that lives in
+`~/Applications` or `/Applications`. Remove it all again with
+`ws url --uninstall`.
+
+The other deep link needs no handler at all: a served workspace is a plain
+`https://<sub>.<domain>` URL, which `ws list` and `ws url --link` both print.
 
 ## OAuth config: wildcard redirects
 

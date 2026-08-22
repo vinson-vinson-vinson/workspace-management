@@ -15,7 +15,7 @@ ${C_BOLD}Usage${C_RESET}
 ${C_BOLD}Commands${C_RESET}
   ${C_GREEN}create${C_RESET} <slug> [options]   Create (or reopen) a workspace and open your IDE(s)
   ${C_GREEN}list${C_RESET} [--quiet]            List all workspaces ${C_DIM}(default when no command given)${C_RESET}
-  ${C_GREEN}open${C_RESET} <N|slug>             Open a workspace in the configured IDE(s) by its ${C_DIM}ws list${C_RESET} index
+  ${C_GREEN}open${C_RESET} <N|slug>             Open a workspace in the configured IDE(s) ${C_DIM}(creates it if the slug is new)${C_RESET}
   ${C_GREEN}serve${C_RESET} [slug] [options]    Serve a workspace at its subdomain ${C_DIM}(defaults to cwd)${C_RESET}
   ${C_GREEN}share${C_RESET} [slug]              Expose a workspace (or main) via ngrok ${C_DIM}(foreground; Ctrl-C to stop)${C_RESET}
   ${C_GREEN}status${C_RESET} [slug]             Workspace health check ${C_DIM}(branches, git, serving, ports, deps)${C_RESET}
@@ -24,6 +24,7 @@ ${C_BOLD}Commands${C_RESET}
   ${C_GREEN}test${C_RESET} [slug] [args]       Run the backend suite on the workspace's OWN test DB ${C_DIM}(defaults to cwd)${C_RESET}
   ${C_GREEN}sync${C_RESET}                     Refresh each window's Source Control repo list ${C_DIM}(auto on create/remove)${C_RESET}
   ${C_GREEN}trust${C_RESET} [--revoke]         Stop serve's sudo prompts for good ${C_DIM}(one-time sudoers rule)${C_RESET}
+  ${C_GREEN}url${C_RESET} [--install|--link]  Clickable ${C_DIM}ws://${C_RESET} deep links ${C_DIM}(open/create/serve a workspace)${C_RESET}
   ${C_GREEN}help${C_RESET}                     Show this help
   ${C_GREEN}version${C_RESET}                  Print the version
 

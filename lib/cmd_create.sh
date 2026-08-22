@@ -8,8 +8,9 @@
 cmd_create_usage() {
   cat <<'USAGE'
 Usage:
-  ws create <NAME_OR_TASK_AND_NAME> [BASE_BRANCH[@REMOTE]] [--remote NAME]
-            [-n|--neanderthal] [--dry-run]
+  ws create <NAME_OR_TASK_AND_NAME> [BASE_BRANCH[@REMOTE]] [--branch NAME]
+            [--remote NAME] [-n|--neanderthal] [--dry-run]
+  ws create --branch <NAME> [...]                 (workspace named after NAME)
 
 Rules:
   - With task:    CU-<taskId>_<feature-name>  -> slug/branch CU-<taskId>_<feature-name>
@@ -30,6 +31,15 @@ Rules:
     it finishes, one terminal per default app running `yarn serve-<app>`.
 
 Options:
+  --branch NAME        Put the worktrees on this branch instead of one named
+                       after the slug — the way to open a workspace on a branch
+                       whose name can't be a directory name (an agent's
+                       "cursor/my-feature-05ff", say). Existing locally or on
+                       the remote, it is checked out; otherwise it is created
+                       from the base. With no slug given, the workspace is named
+                       after the branch's last segment, so
+                       --branch cursor/my-feature-05ff creates the workspace
+                       "my-feature-05ff".
   --remote NAME        Fetch/track branches through this remote in BOTH repos,
                        overriding FRONTEND_REMOTE/BACKEND_REMOTE for this run.
                        BASE_BRANCH@REMOTE still wins for the base branch alone.
@@ -46,6 +56,8 @@ Examples:
   ws create MyNewProject --neanderthal
   ws create CU-1234_Test-Project --dry-run
   ws create CU-1234_Test-Project --remote upstream
+  ws create CU-1234_Test-Project --branch cursor/test-project-05ff
+  ws create --branch cursor/test-project-05ff     # workspace "test-project-05ff"
 USAGE
 }
 
@@ -429,7 +441,7 @@ cmd_create() {
   local positional=() combined=""
   DRY_RUN=false
   AUTO_SERVE=true
-  local BASE_OVERRIDE=""
+  local BASE_OVERRIDE="" BRANCH_OVERRIDE=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -437,6 +449,9 @@ cmd_create() {
       --remote)
         [[ $# -ge 2 && -n "$2" ]] || { err "--remote needs a remote name."; exit 1; }
         REMOTE_OVERRIDE="$2"; shift 2 ;;
+      --branch)
+        [[ $# -ge 2 && -n "$2" ]] || { err "--branch needs a branch name."; exit 1; }
+        BRANCH_OVERRIDE="$2"; shift 2 ;;
       --dry-run)   DRY_RUN=true; shift ;;
       -v|--verbose) VERBOSE=true; shift ;;
       -h|--help)   cmd_create_usage; exit 0 ;;
@@ -448,6 +463,11 @@ cmd_create() {
     esac
   done
 
+  # The slug is optional when --branch names the branch: the workspace takes
+  # the branch's last segment, so an agent branch needs no second name.
+  if [[ ${#positional[@]} -eq 0 && -n "$BRANCH_OVERRIDE" ]]; then
+    positional=("${BRANCH_OVERRIDE##*/}")
+  fi
   if [[ ${#positional[@]} -lt 1 || ${#positional[@]} -gt 2 ]]; then
     cmd_create_usage; exit 1
   fi
@@ -476,6 +496,17 @@ cmd_create() {
   local workspace_file workspace_color="" frontend_ref backend_ref
 
   branch_slug="$(workspace_slug_for "$combined")"
+
+  # The workspace is named by its slug; the branch is normally named the same.
+  # --branch splits the two, which is the only way onto a branch whose name is
+  # not a legal directory name — "cursor/x-05ff" has a slash in it.
+  local wt_branch="${BRANCH_OVERRIDE:-$branch_slug}"
+  if [[ -n "$BRANCH_OVERRIDE" ]]; then
+    git check-ref-format --branch "$BRANCH_OVERRIDE" >/dev/null 2>&1 \
+      || { err "Not a valid branch name: '$BRANCH_OVERRIDE'"; exit 1; }
+    is_protected_branch "$BRANCH_OVERRIDE" \
+      && { err "Refusing to put a workspace on '$BRANCH_OVERRIDE' — that is a base branch."; exit 1; }
+  fi
 
   session_dir="$WORKSPACES_ROOT/$branch_slug"
   frontend_worktree="$session_dir/$FRONTEND_DIR_NAME"
@@ -564,7 +595,7 @@ cmd_create() {
   frontend_ref="$(resolve_base_ref "$FRONTEND_REPO" "$fe_base" "$fe_base_remote")"
   backend_ref="$(resolve_base_ref "$BACKEND_REPO" "$be_base" "$be_base_remote")"
 
-  vlog "Session slug: $branch_slug"
+  vlog "Session slug: $branch_slug (branch: $wt_branch)"
   vlog "Frontend worktree: $frontend_worktree"
   vlog "Backend worktree: $backend_worktree"
   vlog "Workspace file: $workspace_file"
@@ -624,19 +655,19 @@ cmd_create() {
   # Can be slow: may fetch from the remote before adding each worktree.
   local fe_branch_origin be_branch_origin
   spin "creating worktrees"
-  add_worktree "$FRONTEND_REPO" "$branch_slug" "$frontend_worktree" "$frontend_ref"
+  add_worktree "$FRONTEND_REPO" "$wt_branch" "$frontend_worktree" "$frontend_ref"
   created_frontend=true
   fe_branch_origin="$BRANCH_ORIGIN"
-  add_worktree "$BACKEND_REPO" "$branch_slug" "$backend_worktree" "$backend_ref"
+  add_worktree "$BACKEND_REPO" "$wt_branch" "$backend_worktree" "$backend_ref"
   created_backend=true
   be_branch_origin="$BRANCH_ORIGIN"
   spin_stop
   # Usually both repos take the same base and the two origins agree; with a
   # BASE_BRANCH that exists in only one repo they can differ — say so.
   if [[ "$fe_branch_origin" == "$be_branch_origin" ]]; then
-    ok "branches ${BRANCH_ORIGIN} ($branch_slug)"
+    ok "branches ${BRANCH_ORIGIN} ($wt_branch)"
   else
-    ok "branches: $FRONTEND_DIR_NAME ${fe_branch_origin}, $BACKEND_DIR_NAME ${be_branch_origin} ($branch_slug)"
+    ok "branches: $FRONTEND_DIR_NAME ${fe_branch_origin}, $BACKEND_DIR_NAME ${be_branch_origin} ($wt_branch)"
   fi
   ok "worktrees added ($FRONTEND_DIR_NAME, $BACKEND_DIR_NAME)"
 

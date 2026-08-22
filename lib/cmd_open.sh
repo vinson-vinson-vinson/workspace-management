@@ -12,7 +12,9 @@
 cmd_open_usage() {
   cat <<'USAGE'
 Usage:
-  ws open <N | SLUG> [--remote <name>] [--base <branch>] [--no-create] [--dry-run]
+  ws open <N | SLUG> [--branch <name>] [--remote <name>] [--base <branch>]
+          [--no-create] [--dry-run]
+  ws open --branch <name> [...]        (workspace named after the branch)
 
 Opens the workspace in the IDE(s) named by FRONTEND_IDE / BACKEND_IDE in
 config.sh — vscode (the default), phpstorm, webstorm, or zed. With the SAME
@@ -31,6 +33,11 @@ opened. An index never creates anything: it can only name a workspace that
 already exists.
 
 Options:
+  --branch <name>  Branch to put the worktrees on when the workspace has to be
+                   created, for a branch whose name can't be the workspace's
+                   directory name (an agent's "cursor/my-feature-05ff"). With
+                   no N|SLUG given, the workspace is the branch's last segment
+                   ("my-feature-05ff"), so a branch is enough to open one.
   --remote <name>  Fetch the branch through this remote in both repos when the
                    workspace has to be created (overrides FRONTEND_REMOTE /
                    BACKEND_REMOTE for that run).
@@ -46,6 +53,7 @@ Examples:
   ws open 2
   ws open CU-1234_my-feature
   ws open CU-1234_my-feature --remote upstream
+  ws open CU-1234_my-feature --branch cursor/my-feature-05ff
 USAGE
 }
 
@@ -65,18 +73,19 @@ open_main_workspace() {
 # (fetch, worktrees, .code-workspace, terminals) runs exactly as it does on its
 # own, with no half-shared state between the two commands.
 open_by_creating() {
-  local slug="$1" base="$2"
+  local slug="$1" base="$2" branch="$3"
   local -a args=("$slug")
   [[ -n "$base" ]] && args+=("$base")
+  [[ -n "$branch" ]] && args+=(--branch "$branch")
   [[ -n "$REMOTE_OVERRIDE" ]] && args+=(--remote "$REMOTE_OVERRIDE")
   "$DRY_RUN" && args+=(--dry-run)
-  log "No workspace '$slug' yet — creating it${REMOTE_OVERRIDE:+ from remote $REMOTE_OVERRIDE}."
+  log "No workspace '$slug' yet — creating it${branch:+ on branch $branch}${REMOTE_OVERRIDE:+ from remote $REMOTE_OVERRIDE}."
   "$WSM_HOME/workspaces" create "${args[@]}" \
     || { err "Could not create '$slug' — not opening anything."; exit 1; }
 }
 
 cmd_open() {
-  local target="" base="" create_missing=true
+  local target="" base="" branch="" create_missing=true
   DRY_RUN=false
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -86,6 +95,9 @@ cmd_open() {
       --base)
         [[ $# -ge 2 && -n "$2" ]] || { err "--base needs a branch name."; exit 1; }
         base="$2"; shift 2 ;;
+      --branch)
+        [[ $# -ge 2 && -n "$2" ]] || { err "--branch needs a branch name."; exit 1; }
+        branch="$2"; shift 2 ;;
       --no-create) create_missing=false; shift ;;
       --dry-run) DRY_RUN=true; shift ;;
       -v|--verbose) VERBOSE=true; shift ;;
@@ -98,6 +110,12 @@ cmd_open() {
         target="$1"; shift ;;
     esac
   done
+  # A branch alone is enough: the workspace is its last segment (see
+  # slug_from_branch), so an agent branch needs no second name.
+  if [[ -z "$target" && -n "$branch" ]]; then
+    target="$(slug_from_branch "$branch")"
+    vlog "No slug given — branch '$branch' names workspace '$target'."
+  fi
   if [[ -z "$target" ]]; then
     cmd_open_usage; exit 1
   fi
@@ -138,7 +156,7 @@ cmd_open() {
         slug="$canonical"
       else
         "$create_missing" || { err "No workspace named '$slug' (see 'ws list')."; exit 1; }
-        open_by_creating "$slug" "$base"
+        open_by_creating "$slug" "$base" "$branch"
         slug="$canonical"
         # create opened the IDE itself unless the config told it not to; only
         # then does the normal open path below still have work to do.

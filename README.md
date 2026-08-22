@@ -152,9 +152,28 @@ ws url --link CU-1234_my-feature --verb open --remote upstream
 
 | Link | Runs |
 | --- | --- |
-| `ws://create/<slug>?base=<branch>&remote=<name>&bare=1` | `ws create <slug> [branch] [--remote name] [--neanderthal]` |
-| `ws://open/<slug>?remote=<name>&base=<branch>` | `ws open <slug> [--remote name] [--base branch]` |
+| `ws://open?branch=<name>` | `ws open --branch <name>` — workspace named after the branch |
+| `ws://create/<slug>?branch=<name>&base=<branch>&remote=<name>&bare=1` | `ws create <slug> [base] [--branch name] [--remote name] [--neanderthal]` |
+| `ws://open/<slug>?branch=<name>&remote=<name>&base=<branch>` | `ws open <slug> [--branch name] [--remote name] [--base branch]` |
 | `ws://serve/<slug>?all-apps=1` | `ws serve <slug> [--all-apps]` |
+
+**A branch is not a slug.** A workspace slug is a directory name, so it can't
+contain `/` — which is exactly what an agent branch like
+`cursor/anny-customer-stateless-mcp-05ff` has. The branch therefore travels in
+its own `branch` field, and the workspace takes the branch's **last segment**:
+that link opens the workspace `anny-customer-stateless-mcp-05ff` with both
+worktrees checked out on `cursor/anny-customer-stateless-mcp-05ff`. Since the
+branch already names the workspace, the link needs nothing else:
+
+```bash
+ws url --link --verb open --branch cursor/anny-customer-stateless-mcp-05ff
+# -> ws://open?branch=cursor/anny-customer-stateless-mcp-05ff
+```
+
+Pass a slug as well (`ws url --link CU-1234_x --branch cursor/…`) when you want
+the workspace called something other than the branch tail — two namespaces with
+the same tail (`cursor/foo`, `codex/foo`) would otherwise want the same
+workspace.
 
 `remote` and `base` matter on an **open** link too, because opening a slug the
 machine doesn't have creates it first: they decide which remote the branch is

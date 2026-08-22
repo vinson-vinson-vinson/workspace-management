@@ -793,6 +793,17 @@ slugify_name() {
   printf '%s' "$out"
 }
 
+# The workspace name for a branch: its last segment, slugified. Namespaced
+# branches — "cursor/anny-customer-stateless-mcp-05ff" from an agent, or
+# "feature/x" — can't name a directory, and the namespace is noise in a
+# workspace list anyway, so it is dropped: that branch becomes the workspace
+# "anny-customer-stateless-mcp-05ff". Two namespaces with the same tail
+# (cursor/foo and codex/foo) would want the same workspace; the second one is
+# `ws create <your-own-slug> --branch codex/foo` away.
+slug_from_branch() {
+  workspace_slug_for "${1##*/}"
+}
+
 # The canonical workspace slug for whatever the user typed: the task form
 # (<PREFIX>-<id>_<feature>, prefix case-insensitive) keeps a normalised task id
 # and a slugified feature name; anything else is slugified whole.

@@ -17,6 +17,13 @@ when a release is tagged.
   so existing setups are unchanged. `--remote <name>` on `create`, `open` and
   `mr` overrides both for one run, and an unknown name fails up front with the
   repo's actual remote list instead of a raw git error.
+- `--branch <name>` on `ws create` / `ws open` (and `?branch=` on a deep link):
+  put the worktrees on an existing branch instead of one named after the
+  workspace. This is the only way onto a branch whose name can't be a directory
+  name — an agent's `cursor/anny-customer-stateless-mcp-05ff` — and with no slug
+  given the workspace takes the branch's last segment, so
+  `ws open --branch cursor/x-05ff` opens the workspace `x-05ff` on that branch
+  and `ws://open?branch=cursor/x-05ff` is a complete link.
 - `ws open <slug>` creates the workspace when it doesn't exist yet, then opens
   it (`--no-create` restores the old error; `--remote`/`--base` pick where the
   branch comes from). This is what makes an `ws://open/<slug>` link portable —

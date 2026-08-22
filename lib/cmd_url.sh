@@ -34,8 +34,9 @@ Usage:
   ws url --link <SLUG> [...]     Print a shareable link for a workspace
 
 Link grammar (verb is one of: ${WSM_URL_VERBS// /, }):
-  ${WSM_URL_SCHEME}://create/<slug>[?base=<branch>&remote=<name>&bare=1]
-  ${WSM_URL_SCHEME}://open/<slug>[?remote=<name>&base=<branch>]
+  ${WSM_URL_SCHEME}://create/<slug>[?branch=<name>&base=<branch>&remote=<name>&bare=1]
+  ${WSM_URL_SCHEME}://open/<slug>[?branch=<name>&remote=<name>&base=<branch>]
+  ${WSM_URL_SCHEME}://open?branch=<name>                (workspace named after the branch)
   ${WSM_URL_SCHEME}://serve/<slug>[?all-apps=1]
 
   An open link creates the workspace when the machine following it doesn't have
@@ -53,11 +54,14 @@ Options:
   --install       Build the handler app (default: \$WSM_URL_APP) and register it
                   with Launch Services, so ${WSM_URL_SCHEME}:// links open it.
   --uninstall     Deregister and delete that app.
-  --link <SLUG>   Print a link instead of following one. Combine with --verb
-                  and --base.
+  --link <SLUG>   Print a link instead of following one. Combine with --verb,
+                  --branch, --base and --remote. With --branch the slug may be
+                  omitted — the branch names the workspace.
   --verb <VERB>   Verb for --link (default: create).
   --base <BRANCH> Base branch for --link / an override when handling a link.
   --remote <NAME> Remote name for --link / an override when handling a link.
+  --branch <NAME> Branch to put the worktrees on (create/open), for a branch
+                  whose name can't be a workspace directory name.
   -n, --print     Print the command a link resolves to; run nothing.
   --here          Run the resolved command in THIS terminal instead of opening
                   a new one (the default when stdout is a terminal).
@@ -227,7 +231,7 @@ url_open_command_window() {
 
 # Parse LINK into a validated (verb, slug, flags) triple and run it.
 url_handle() {
-  local url="$1" rest query="" verb path="" slug base remote
+  local url="$1" rest query="" verb path="" slug base remote branch
 
   [[ "$url" == "$WSM_URL_SCHEME://"* ]] \
     || url_die "Not a ${WSM_URL_SCHEME}:// link: $url"
@@ -244,8 +248,21 @@ url_handle() {
 
   # Path form (ws://open/SLUG) and query form (ws://open?slug=SLUG) are both
   # accepted; the path wins when a link somehow carries both.
+  # A branch name is not a slug: it may contain '/', which a workspace
+  # directory can't, so an agent branch like cursor/x-05ff travels in its own
+  # field rather than as the workspace name.
+  branch="${URL_BRANCH:-$(url_query_field "$query" branch)}"
+  if [[ -n "$branch" ]]; then
+    url_valid_branch "$branch" || url_die "Refusing branch '$branch' — letters, digits, . _ - / only."
+  fi
+
   slug="$path"
   [[ -n "$slug" ]] || slug="$(url_query_field "$query" slug)"
+  # ws://open?branch=cursor/x-05ff — the branch names the workspace (its last
+  # segment), so a link that carries a branch needs no slug at all.
+  if [[ -z "$slug" && -n "$branch" && "$verb" != "serve" ]]; then
+    slug="$(slug_from_branch "$branch")"
+  fi
   [[ -n "$slug" ]] || url_die "Link carries no workspace slug: $url"
   url_valid_slug "$slug" || url_die "Refusing slug '$slug' — letters, digits, . _ - only."
 
@@ -266,6 +283,7 @@ url_handle() {
   case "$verb" in
     create)
       [[ -n "$base" ]] && argv+=("$base")
+      [[ -n "$branch" ]] && argv+=(--branch "$branch")
       [[ -n "$remote" ]] && argv+=(--remote "$remote")
       url_is_true "$(url_query_field "$query" bare)" && argv+=(--neanderthal)
       ;;
@@ -273,6 +291,7 @@ url_handle() {
       # base and remote reach `ws open`'s create-when-missing path — they decide
       # where the workspace comes from on a machine that doesn't have it yet.
       [[ -n "$base" ]] && argv+=(--base "$base")
+      [[ -n "$branch" ]] && argv+=(--branch "$branch")
       [[ -n "$remote" ]] && argv+=(--remote "$remote")
       ;;
     serve)
@@ -281,19 +300,20 @@ url_handle() {
       # command actually does.
       [[ -n "$base" ]] && { warn "'base' is meaningless for serve — ignored."; base=""; }
       [[ -n "$remote" ]] && { warn "'remote' is meaningless for serve — ignored."; remote=""; }
+      [[ -n "$branch" ]] && { warn "'branch' is meaningless for serve — ignored."; branch=""; }
       ;;
   esac
   # Only serve has a -v; passing it to create/open would be an "unknown option".
   { "$VERBOSE" && [[ "$verb" == "serve" ]]; } && argv+=(-v)
 
-  log "link -> ${verb} ${slug}${base:+ (base ${base})}${remote:+ (remote ${remote})}"
+  log "link -> ${verb} ${slug}${branch:+ (branch ${branch})}${base:+ (base ${base})}${remote:+ (remote ${remote})}"
   url_run "${argv[@]}"
 }
 
 # -------------------------------- link ---------------------------------------
 
 url_link() {
-  local slug="$1" verb="$2" base="$3" remote="$4" query=""
+  local slug="$1" verb="$2" base="$3" remote="$4" branch="$5" query=""
   case " $WSM_URL_VERBS " in
     *" $verb "*) ;;
     *) err "Unknown verb '$verb' — one of: ${WSM_URL_VERBS// /, }"; exit 1 ;;
@@ -301,10 +321,18 @@ url_link() {
   url_valid_slug "$slug" || { err "Not a linkable slug: $slug"; exit 1; }
   [[ -z "$base" ]] || url_valid_branch "$base" || { err "Not a linkable branch: $base"; exit 1; }
   [[ -z "$remote" ]] || url_valid_remote "$remote" || { err "Not a linkable remote: $remote"; exit 1; }
+  [[ -z "$branch" ]] || url_valid_branch "$branch" || { err "Not a linkable branch: $branch"; exit 1; }
 
+  [[ -z "$branch" ]] || query+="${query:+&}branch=$branch"
   [[ -z "$base" ]]   || query+="${query:+&}base=$base"
   [[ -z "$remote" ]] || query+="${query:+&}remote=$remote"
-  printf '%s://%s/%s%s\n' "$WSM_URL_SCHEME" "$verb" "$slug" "${query:+?$query}"
+  # When the branch already implies the workspace name, don't say it twice:
+  # ws://open?branch=cursor/x-05ff rather than ws://open/x-05ff?branch=…
+  if [[ -n "$branch" && "$slug" == "$(slug_from_branch "$branch")" ]]; then
+    printf '%s://%s?%s\n' "$WSM_URL_SCHEME" "$verb" "$query"
+  else
+    printf '%s://%s/%s%s\n' "$WSM_URL_SCHEME" "$verb" "$slug" "${query:+?$query}"
+  fi
 
   # The served host is the other, handler-free deep link: a plain https URL any
   # browser already knows how to open. Worth printing next to the ws:// one.
@@ -441,16 +469,22 @@ cmd_url() {
   URL_HERE=false
   URL_BASE=""
   URL_REMOTE=""
+  URL_BRANCH=""
   local mode="" url="" link_slug="" verb="create"
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --install)   mode="install"; shift ;;
       --uninstall) mode="uninstall"; shift ;;
-      --link)      url_need_value "$@"; mode="link"; link_slug="$2"; shift 2 ;;
+      --link)
+        # The slug is optional here: with --branch the branch names the
+        # workspace, so `--link --branch x` must not swallow the next flag.
+        mode="link"
+        if [[ $# -ge 2 && -n "$2" && "$2" != -* ]]; then link_slug="$2"; shift 2; else shift; fi ;;
       --verb)      url_need_value "$@"; verb="$2"; shift 2 ;;
       --base)      url_need_value "$@"; URL_BASE="$2"; shift 2 ;;
       --remote)    url_need_value "$@"; URL_REMOTE="$2"; shift 2 ;;
+      --branch)    url_need_value "$@"; URL_BRANCH="$2"; shift 2 ;;
       -n|--print)  URL_PRINT=true; shift ;;
       --here)      URL_HERE=true; shift ;;
       --dry-run)   DRY_RUN=true; shift ;;
@@ -467,8 +501,10 @@ cmd_url() {
     install)   cmd_url_install ;;
     uninstall) cmd_url_uninstall ;;
     link)
-      [[ -n "$link_slug" ]] || { err "--link needs a workspace slug."; exit 1; }
-      url_link "$link_slug" "$verb" "$URL_BASE" "$URL_REMOTE"
+      # --branch alone is enough: the branch names the workspace.
+      [[ -n "$link_slug" || -z "$URL_BRANCH" ]] || link_slug="$(slug_from_branch "$URL_BRANCH")"
+      [[ -n "$link_slug" ]] || { err "--link needs a workspace slug (or --branch)."; exit 1; }
+      url_link "$link_slug" "$verb" "$URL_BASE" "$URL_REMOTE" "$URL_BRANCH"
       ;;
     handle)    url_handle "$url" ;;
     *)         cmd_url_usage; exit 1 ;;

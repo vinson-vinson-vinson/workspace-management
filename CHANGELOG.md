@@ -9,6 +9,8 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.21.0] — 2026-08-25
+
 ### Added
 - `FRONTEND_REMOTE` / `BACKEND_REMOTE` config: the git remote each repo is
   fetched from and pushed to, replacing the hard-coded `origin` in `ws create`

@@ -79,6 +79,7 @@ open_by_creating() {
   [[ -n "$branch" ]] && args+=(--branch "$branch")
   [[ -n "$REMOTE_OVERRIDE" ]] && args+=(--remote "$REMOTE_OVERRIDE")
   "$DRY_RUN" && args+=(--dry-run)
+  "$VERBOSE" && args+=(-v)
   log "No workspace '$slug' yet — creating it${branch:+ on branch $branch}${REMOTE_OVERRIDE:+ from remote $REMOTE_OVERRIDE}."
   "$WSM_HOME/workspaces" create "${args[@]}" \
     || { err "Could not create '$slug' — not opening anything."; exit 1; }

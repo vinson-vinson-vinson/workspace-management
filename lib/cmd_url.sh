@@ -303,8 +303,8 @@ url_handle() {
       [[ -n "$branch" ]] && { warn "'branch' is meaningless for serve — ignored."; branch=""; }
       ;;
   esac
-  # Only serve has a -v; passing it to create/open would be an "unknown option".
-  { "$VERBOSE" && [[ "$verb" == "serve" ]]; } && argv+=(-v)
+  # create, open and serve all accept -v, so forward it to whichever verb ran.
+  "$VERBOSE" && argv+=(-v)
 
   log "link -> ${verb} ${slug}${branch:+ (branch ${branch})}${base:+ (base ${base})}${remote:+ (remote ${remote})}"
   url_run "${argv[@]}"

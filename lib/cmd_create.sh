@@ -61,30 +61,8 @@ Examples:
 USAGE
 }
 
-normalize_task_id() {
-  local raw="$1" body
-  body="$(printf '%s' "$raw" | tr -d '[:space:]')"
-  # Strip the prefix in either case (e.g. CU- / cu-) before re-adding it.
-  body="${body#"${TASK_ID_PREFIX}"-}"
-  body="${body#"${TASK_ID_PREFIX_LC}"-}"
-  body="$(printf '%s' "$body" | tr -cd '[:alnum:]-')"
-  if [[ -z "$body" ]]; then
-    err "Invalid task id: '$raw'"; exit 1
-  fi
-  printf '%s-%s' "$TASK_ID_PREFIX" "$body"
-}
-
-slugify_name() {
-  local raw="$1" out
-  out="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]')"
-  out="$(printf '%s' "$out" | sed -E 's/[[:space:]_]+/-/g')"
-  out="$(printf '%s' "$out" | sed -E 's/[^a-z0-9-]//g')"
-  out="$(printf '%s' "$out" | sed -E 's/-+/-/g; s/^-+//; s/-+$//')"
-  if [[ -z "$out" ]]; then
-    err "Feature name produces empty slug: '$raw'"; exit 1
-  fi
-  printf '%s' "$out"
-}
+# normalize_task_id / slugify_name / workspace_slug_for live in common.sh so
+# `ws create` and `ws open` share one normalisation and can never drift.
 
 resolve_base_ref() {
   local repo="$1" branch="$2" remote="${3:-}" default_remote

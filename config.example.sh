@@ -44,6 +44,19 @@ SYNC_MAIN_WORKSPACE=true
 FRONTEND_BASE_BRANCH="main"
 BACKEND_BASE_BRANCH="main"
 
+# The git remote each repo is fetched from and pushed to, per repo — the two
+# sides can live on different remotes (say a fork of the frontend and upstream
+# for the backend). Used by `ws create` (fetch, checkout, tracking) and `ws mr`
+# (push). Both default to "origin", which is what the tool assumed before these
+# settings existed, so leaving them alone changes nothing.
+#
+# `ws create --remote <name>` / `ws mr --remote <name>` override BOTH for one
+# run, and a deep link can carry `?remote=<name>` (see `ws url --help`). All of
+# them take a remote NAME that the repo already has — nothing here ever adds a
+# remote or accepts a URL.
+FRONTEND_REMOTE="origin"
+BACKEND_REMOTE="origin"
+
 # Task-id prefix for "task" workspaces, e.g. ClickUp's "CU". A slug of the form
 # <PREFIX>-<id>_<feature-name> (CU-1234_my-feature) is treated as a task
 # workspace and gets a short subdomain derived from the task id. Any other name
@@ -179,6 +192,19 @@ SESSION_TABS=(
   "agent (ui):frontend:claude"
   # "scheduler:backend:php artisan schedule:work"
 )
+
+# ------------------------------- deep links ----------------------------------
+# `ws url --install` registers a macOS app that owns a URL scheme, so a link in
+# a task or an MR can open its workspace (see the README's "Deep links"). Both
+# settings are optional; the defaults are shown.
+#
+# The scheme the handler owns. Change it if `ws://` collides with something else
+# you have installed — the links you hand out have to use the same word.
+# WSM_URL_SCHEME="ws"
+#
+# Where the handler app is built. Launch Services only routes links to an app
+# under ~/Applications or /Applications, so keep it in one of those.
+# WSM_URL_APP="$HOME/Applications/WorkspacesURL.app"
 
 # ------------------------ per-workspace test database ------------------------
 # Each workspace gets its own MySQL test DB (created by `ws create`, dropped by

@@ -9,6 +9,44 @@ when a release is tagged.
 
 ## [Unreleased]
 
+### Added
+- `FRONTEND_REMOTE` / `BACKEND_REMOTE` config: the git remote each repo is
+  fetched from and pushed to, replacing the hard-coded `origin` in `ws create`
+  (fetch, checkout, tracking) and `ws mr` (push). Per repo, so a forked
+  frontend and an upstream backend work side by side; both default to `origin`,
+  so existing setups are unchanged. `--remote <name>` on `create`, `open` and
+  `mr` overrides both for one run, and an unknown name fails up front with the
+  repo's actual remote list instead of a raw git error.
+- `--branch <name>` on `ws create` / `ws open` (and `?branch=` on a deep link):
+  put the worktrees on an existing branch instead of one named after the
+  workspace. This is the only way onto a branch whose name can't be a directory
+  name — an agent's `cursor/anny-customer-stateless-mcp-05ff` — and with no slug
+  given the workspace takes the branch's last segment, so
+  `ws open --branch cursor/x-05ff` opens the workspace `x-05ff` on that branch
+  and `ws://open?branch=cursor/x-05ff` is a complete link.
+- `ws open <slug>` creates the workspace when it doesn't exist yet, then opens
+  it (`--no-create` restores the old error; `--remote`/`--base` pick where the
+  branch comes from). This is what makes an `ws://open/<slug>` link portable —
+  the machine following it doesn't need the session dir already. A slug is also
+  normalised the way `ws create` normalises it, so `CU-1234_My-Feature` finds
+  the `CU-1234_my-feature` workspace instead of creating a second one.
+- `ws url`: clickable `ws://` deep links. `ws url --install` builds and
+  registers a small AppleScript handler app in `~/Applications`, after which
+  `ws://create/<slug>?base=<branch>`, `ws://open/<slug>` and
+  `ws://serve/<slug>` open the matching workspace command in a new terminal
+  window — so a ClickUp task or an MR description can carry a link straight to
+  its workspace. `ws url --link <slug>` prints a link to paste (plus the served
+  https URL), `--print` resolves one without running it, `--uninstall` removes
+  the app. A followed link runs its command in a Terminal window opened via a
+  generated `.command` file rather than an AppleScript `do script`, so it needs
+  no Automation consent — an Apple Event from the handler app would put a modal
+  permission dialog between the click and the window, and silence the error
+  path (which also posts through osascript) if it were denied. Links are
+  treated as untrusted: the verb is a whitelist and every
+  field is character-class validated before it reaches a command line, and
+  `remove` is not linkable at all. `?remote=<name>` picks the remote on create
+  and open links; it takes a remote name, never a URL.
+
 ## [2.20.0] — 2026-08-17
 
 ### Added

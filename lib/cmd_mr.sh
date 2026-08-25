@@ -8,7 +8,8 @@
 cmd_mr_usage() {
   cat <<'USAGE'
 Usage:
-  ws mr [SLUG] [--fe | --be | --all] [--target <branch>] [--draft | --nd] [--dry-run]
+  ws mr [SLUG] [--fe | --be | --all] [--target <branch>] [--remote <name>]
+        [--draft | --nd] [--dry-run]
 
 For each repo of a workspace, open its merge request if one exists, or create
 one — but only when the branch has commits the target doesn't. A repo with
@@ -28,6 +29,9 @@ Options:
                 Target branch for the MR. Defaults per repo to the base branch
                 it was cut from (FRONTEND_BASE_BRANCH / BACKEND_BASE_BRANCH,
                 both "main" out of the box).
+      --remote <name>
+                Push through this remote in both repos, overriding
+                FRONTEND_REMOTE / BACKEND_REMOTE for this run.
       --draft   Force a draft MR (overrides MR_DRAFT=false).
       --nd      No-draft: create the MR ready for review (overrides MR_DRAFT=true).
       --dry-run Print what would happen without pushing or touching GitLab.
@@ -70,18 +74,21 @@ _mr_title() {
 #   $1 worktree path, $2 label, $3 target override (may be empty), $4 base branch
 _mr_for_repo() {
   local worktree="$1" label="$2" target_override="$3" base_branch="$4"
-  local branch target base_ref ahead
+  local branch target base_ref ahead remote
 
   [[ -d "$worktree" ]] || { vlog "$label: no worktree at $worktree — skipping."; return 0; }
   branch="$(worktree_branch "$worktree")"
   [[ -n "$branch" ]] || { warn "$label: no branch in the worktree — skipping."; return 0; }
+  # Per repo: the frontend may push to a fork while the backend pushes upstream.
+  remote="$(remote_for_repo "$worktree")"
   target="${target_override:-$base_branch}"
 
-  # Count commits the branch has that the target doesn't. Prefer origin/<target>
-  # — the MR is judged against the remote, so that's the honest baseline.
+  # Count commits the branch has that the target doesn't. Prefer
+  # <remote>/<target> — the MR is judged against the remote, so that's the
+  # honest baseline.
   base_ref="$target"
-  git -C "$worktree" rev-parse --verify --quiet "refs/remotes/origin/$target" >/dev/null 2>&1 \
-    && base_ref="origin/$target"
+  git -C "$worktree" rev-parse --verify --quiet "refs/remotes/$remote/$target" >/dev/null 2>&1 \
+    && base_ref="$remote/$target"
   ahead="$(git -C "$worktree" rev-list --count "${base_ref}..${branch}" 2>/dev/null || printf '0')"
 
   if [[ "$ahead" -eq 0 ]]; then
@@ -99,17 +106,18 @@ _mr_for_repo() {
   if "$DRY_RUN"; then
     local kind="MR"; "$DRAFT" && kind="draft MR"
     printf '[dry-run] %s: %s commit(s) ahead of %s\n' "$label" "$ahead" "$target"
-    printf '[dry-run]   push %s, then %s "%s" -> %s\n' "$branch" "$kind" "$title" "$target"
+    printf '[dry-run]   push %s to %s, then %s "%s" -> %s\n' "$branch" "$remote" "$kind" "$title" "$target"
     [[ -n "$MR_ASSIGNEE" ]] && printf '[dry-run]   assignee: %s\n' "$MR_ASSIGNEE"
     return 0
   fi
 
-  # An MR needs the branch on the remote. Push when origin has no copy or is
-  # behind — from the worktree, so glab reads the right remote afterwards.
+  # An MR needs the branch on the remote. Push when the remote has no copy or
+  # is behind — from the worktree, so glab reads the right remote afterwards.
+  require_remote "$worktree" "$remote"
   local need_push=false
-  if ! git -C "$worktree" rev-parse --verify --quiet "refs/remotes/origin/$branch" >/dev/null 2>&1; then
+  if ! git -C "$worktree" rev-parse --verify --quiet "refs/remotes/$remote/$branch" >/dev/null 2>&1; then
     need_push=true
-  elif [[ "$(git -C "$worktree" rev-list --count "origin/$branch..$branch" 2>/dev/null || printf '1')" -gt 0 ]]; then
+  elif [[ "$(git -C "$worktree" rev-list --count "$remote/$branch..$branch" 2>/dev/null || printf '1')" -gt 0 ]]; then
     need_push=true
   fi
   if "$need_push"; then
@@ -117,9 +125,9 @@ _mr_for_repo() {
     # following multibyte character as part of the name, so "$branch…" looks up
     # `branch\xe2` — unset, which `set -u` turns into a fatal error right before
     # the push. Keep them on any $var directly followed by a non-ASCII glyph.
-    log "$label: pushing ${branch}…"
+    log "$label: pushing ${branch} to ${remote}…"
     local push_out
-    if ! push_out="$( cd "$worktree" && git push -u origin "$branch" 2>&1 )"; then
+    if ! push_out="$( cd "$worktree" && git push -u "$remote" "$branch" 2>&1 )"; then
       err "$label: push failed —"
       printf '%s\n' "$push_out" | sed 's/^/    /' >&2
       err "$label: resolve it and re-run 'ws mr'."
@@ -169,6 +177,8 @@ cmd_mr() {
       --be)       be=true; shift ;;
       --all)      fe=true; be=true; shift ;;
       --target)   target="${2:-}"; [[ -n "$target" ]] || { err "--target needs a branch"; exit 1; }; shift 2 ;;
+      --remote)   [[ $# -ge 2 && -n "${2:-}" ]] || { err "--remote needs a remote name"; exit 1; }
+                  REMOTE_OVERRIDE="$2"; shift 2 ;;
       --draft)    want_draft=true; shift ;;
       --nd)       want_nodraft=true; shift ;;
       --dry-run)  DRY_RUN=true; shift ;;

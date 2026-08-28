@@ -346,6 +346,13 @@ cmd_remove() {
   run_hooks pre-remove \
     || { err "Aborting: a pre-remove hook failed — nothing was deleted."; exit 1; }
 
+  # Step out of the workspace before deleting it: `ws remove` is often run from
+  # inside the worktree it's tearing down, and removing the shell's own cwd
+  # leaves later git/rm steps operating on a deleted directory — which aborts the
+  # teardown mid-way (under set -e) and strands a half-removed session dir. A dir
+  # outside every workspace (the tool's own home, or / as a last resort) is safe.
+  cd "$WSM_HOME" 2>/dev/null || cd / || true
+
   vlog "Removing workspace..."
 
   # Before routing: a launch config can exist without an nginx block, and
@@ -406,6 +413,7 @@ cmd_remove() {
   # vendor and an installed node_modules — tens of thousands of small files.
   spin "deleting workspace files"
 
+  local removal_incomplete=false
   if [[ -d "$session_dir" ]]; then
     if [[ -z "$(ls -A "$session_dir" 2>/dev/null)" ]]; then
       vlog "Removing empty session directory: $session_dir"
@@ -413,6 +421,18 @@ cmd_remove() {
     else
       vlog "Session directory not empty after worktree removal. Forcing removal."
       run_cmd rm -rf "$session_dir"
+    fi
+    # Verify: run_cmd doesn't check exit status, and a half-removed dir would
+    # otherwise be reported as a clean removal AND keep showing in `ws list`
+    # (which enumerates by directory). Retry once, then say so loudly.
+    if ! "$DRY_RUN" && [[ -d "$session_dir" ]]; then
+      rm -rf "$session_dir" 2>/dev/null || true
+      if [[ -d "$session_dir" ]]; then
+        spin_stop
+        removal_incomplete=true
+        warn "Session directory could not be fully removed: $session_dir"
+        warn "It will still appear in 'ws list'. Remove it by hand: rm -rf \"$session_dir\""
+      fi
     fi
   else
     vlog "Session directory does not exist. Skipping."
@@ -433,8 +453,12 @@ cmd_remove() {
   run_quiet git -C "$FRONTEND_REPO" worktree prune
   run_quiet git -C "$BACKEND_REPO" worktree prune
 
-  vlog "Workspace '$slug' removed successfully."
-  spin_ok "workspace removed ($slug)"
+  if "$removal_incomplete"; then
+    warn "workspace '$slug' only partially removed — see the note above."
+  else
+    vlog "Workspace '$slug' removed successfully."
+    spin_ok "workspace removed ($slug)"
+  fi
 
   # Its own step, after the removal is done: refresh the REMAINING workspaces'
   # ignore-lists so they drop this workspace's repos.

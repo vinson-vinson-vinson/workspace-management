@@ -9,6 +9,20 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.21.1] — 2026-08-28
+
+### Fixed
+- `ws remove` run from INSIDE the workspace could abort mid-teardown and strand a
+  half-removed session directory: the git worktrees and branches were gone, but
+  the frontend directory survived, and because `ws list` enumerates by directory
+  the workspace kept showing as if it still existed — while remove had already
+  printed a clean `✓`. Removing the shell's own cwd left a later step operating on
+  a deleted directory, which aborts under `set -e`. `ws remove` now steps out of
+  the workspace (to the tool's home) before deleting anything, so no step runs
+  from the directory being removed; it also verifies the session directory is
+  actually gone, retries once, and on failure warns loudly and reports the
+  removal as incomplete instead of a false success.
+
 ## [2.21.0] — 2026-08-25
 
 ### Added

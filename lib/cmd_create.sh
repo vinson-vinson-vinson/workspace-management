@@ -199,9 +199,15 @@ auto_serve_if_needed() {
   #
   # WS_TERMINALS_PENDING: serve is a separate process, so it can't see that
   # create is about to open the terminals — without this its landing box hands
-  # over a `yarn serve-…` command that would start a second copy.
+  # over a `yarn serve-…` command that would start a second copy. Only claimed
+  # when the terminals will actually open (TERMINAL_ENABLED, non-VS-Code IDEs);
+  # otherwise serve's manual `yarn serve-…` hint is exactly what we want.
+  local terminals_pending=false
+  if [[ "$TERMINAL_ENABLED" == "true" ]] && ! [[ "$FRONTEND_IDE" == "vscode" && "$BACKEND_IDE" == "vscode" ]]; then
+    terminals_pending=true
+  fi
   log "Serving workspace…"
-  WS_TERMINALS_PENDING=true WSM_HOME="$WSM_HOME" "$WSM_HOME/workspaces" serve "$branch_slug" || true
+  WS_TERMINALS_PENDING="$terminals_pending" WSM_HOME="$WSM_HOME" "$WSM_HOME/workspaces" serve "$branch_slug" || true
 }
 
 # Pick a legible title-bar foreground ("dark"/"light") for a "#rrggbb" bg using

@@ -361,8 +361,14 @@ load_config() {
     printf 'or point WSM_CONFIG at your config file.\n' >&2
     exit 1
   fi
+  # TERMINAL_ENABLED from the environment (ws-cli --terminals / a manual
+  # `TERMINAL_ENABLED=true ws create …`) must beat the config file's value.
+  local _env_terminal_enabled="${TERMINAL_ENABLED:-}"
   # shellcheck source=/dev/null
   source "$cfg"
+  if [[ -n "$_env_terminal_enabled" ]]; then
+    TERMINAL_ENABLED="$_env_terminal_enabled"
+  fi
   TASK_ID_PREFIX_LC="$(printf '%s' "$TASK_ID_PREFIX" | tr '[:upper:]' '[:lower:]')"
   # Optional settings — defaulted here so configs predating them keep working
   # under `set -u`.
@@ -419,6 +425,9 @@ load_config() {
   TEST_MEMORY_LIMIT="${TEST_MEMORY_LIMIT:-1G}"
   # Terminal opened for post-create commands (e.g. yarn serve-*, an agent).
   TERMINAL_APP="${TERMINAL_APP:-terminal}"
+  # Whether `ws create` auto-opens the session terminals at all. Config or
+  # env; the ws-cli wrapper's --terminals/--no-terminals flags export this.
+  TERMINAL_ENABLED="${TERMINAL_ENABLED:-true}"
   # Set by `ws create` when it opens the terminals itself (see cmd_create).
   WS_TERMINALS_PENDING="${WS_TERMINALS_PENDING:-false}"
   # Commands auto-started in terminal tabs after ws create. $WT_FRONTEND and
@@ -583,6 +592,7 @@ TABS
 # running both would start every dev server twice on the same port.
 auto_open_terminals_if_needed() {
   local wt_fe="$1" wt_be="$2"; shift 2
+  [[ "$TERMINAL_ENABLED" == "true" ]] || return 0
   [[ "$FRONTEND_IDE" == "vscode" && "$BACKEND_IDE" == "vscode" ]] && return 0
   auto_open_terminals "$wt_fe" "$wt_be" "$@"
 }

@@ -159,6 +159,12 @@ EXTRA_WORKSPACE_FOLDERS=(
 # workspace's tabs can become a named collapsible group.
 TERMINAL_APP="terminal"
 
+# Master switch for the auto-opened session terminals. Set to false to never
+# open terminals from `ws create` — the serve box then prints the manual
+# `yarn serve-<app>` command instead. Opt back in per run with
+# `TERMINAL_ENABLED=true ws create …` (ws-cli: `ws create … --terminals`).
+TERMINAL_ENABLED=true
+
 # Overrides the derived tab set above with your own commands, one tab each.
 # $WT_FRONTEND and $WT_BACKEND are substituted with the session worktree paths
 # at runtime, so each command has to cd itself. Leave the array empty to use

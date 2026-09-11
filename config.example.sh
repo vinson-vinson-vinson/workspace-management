@@ -262,8 +262,10 @@ NGROK_DOMAIN=""
 # The ngrok binary. Optional; defaults to "ngrok".
 NGROK_BIN="ngrok"
 
-# Base of the per-workspace dev-server port block. Kept well clear of your main
-# workspace's ports so main + a task can run at the same time.
+# Base of the per-workspace port block. Each workspace gets 20 consecutive
+# ports (dev servers plus the Vite SSR HMR sockets behind them), so the range
+# spans PORT_RANGE_START .. PORT_RANGE_START + 20000. Kept well clear of your
+# main workspace's ports so main + a task can run at the same time.
 PORT_RANGE_START=20000
 
 # Laravel Valet paths. The cert/key must cover both $BASE_DOMAIN and its

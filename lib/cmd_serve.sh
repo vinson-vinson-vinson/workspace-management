@@ -72,13 +72,31 @@ all_app_keys() {
 # Deterministic per-workspace port block base, derived from the subdomain so the
 # same task always maps to the same ports and different tasks get different
 # blocks (so several workspaces can run at once).
+#
+# Each workspace owns a block of 20 ports:
+#     base +  1..5   Nuxt dev servers        (app offset)
+#     base + 11..15  Vite SSR HMR sockets    (app offset + 10)
+#     rest           reserve
+# The hash is taken mod 1000 so the whole range ends below 40000 and stays clear
+# of the macOS ephemeral port range (49152+), which a 2000-slot block of 20
+# would run into.
 compute_port_base() {
   local key="$1" h
   h="$(printf '%s' "$key" | cksum | cut -d' ' -f1)"
-  printf '%s' "$(( PORT_RANGE_START + (h % 2000) * 10 ))"
+  printf '%s' "$(( PORT_RANGE_START + (h % 1000) * 20 ))"
 }
 
 port_for() { printf '%s' "$(( PORT_BASE + $(app_offset "$1") ))"; }
+
+# Nuxt's SSR Vite builder stands up a websocket server nobody uses and parks it
+# on Vite's shared default port 24678 (its autodetect misses a listener bound on
+# the IPv6 wildcard). Every dev server after the first one on the machine then
+# logs "WebSocket server error: Port 24678 is already in use", which reads like
+# broken HMR and sent us chasing the wrong bug once already. Pinning it per
+# workspace keeps that quiet. BROWSER HMR needs nothing here: Nuxt hangs the
+# client socket off the dev server itself, so it rides the app's own port and
+# reaches the browser through the normal nginx location, over wss on 443.
+hmr_port_for() { printf '%s' "$(( PORT_BASE + 10 + $(app_offset "$1") ))"; }
 
 # Set KEY=VALUE in an env file (replace if present, append otherwise).
 # No-op when the exact line is already there: sed -i rewrites the file (and
@@ -92,6 +110,9 @@ set_env_var() {
   if grep -qE "^${key}=" "$file"; then
     sed -i '' -E "s#^${key}=.*#${key}=${val}#" "$file"
   else
+    # A .env whose last line has no trailing newline would otherwise get the new
+    # key glued onto it (FOO=barNEW_KEY=…), silently corrupting both.
+    [[ -s "$file" && -n "$(tail -c 1 "$file")" ]] && printf '\n' >>"$file"
     printf '%s=%s\n' "$key" "$val" >>"$file"
   fi
 }
@@ -123,9 +144,10 @@ apply_storage_prefix() {
 # shared soketi on the main host.
 prepare_frontend_env() {
   local app_key="$1" host="$2"
-  local dir port main_env wt_env
+  local dir port hmr_port main_env wt_env
   dir="$(app_dir "$app_key")"
   port="$(port_for "$app_key")"
+  hmr_port="$(hmr_port_for "$app_key")"
   main_env="$FRONTEND_REPO/$dir/.env"
   wt_env="$WT_FRONTEND/$dir/.env"
 
@@ -141,17 +163,18 @@ prepare_frontend_env() {
     # drops a .env here before serve runs (an editor, a worktree hook, an
     # earlier checkout) otherwise pins the port to whatever main uses.
     if "$DRY_RUN"; then
-      printf '[dry-run] keep %s ; re-pin HOST/PORT=%s ; ensure STORAGE_PREFIX starts with %s\n' \
-        "$wt_env" "$port" "$WS_STORAGE_PREFIX"
+      printf '[dry-run] keep %s ; re-pin HOST/PORT=%s, HMR_PORT=%s ; ensure STORAGE_PREFIX starts with %s\n' \
+        "$wt_env" "$port" "$hmr_port" "$WS_STORAGE_PREFIX"
       return 0
     fi
     set_env_var "$wt_env" HOST "127.0.0.1"
     set_env_var "$wt_env" PORT "$port"
+    set_env_var "$wt_env" HMR_PORT "$hmr_port"
     # Same reasoning as HOST/PORT: a kept env carrying main's STORAGE_PREFIX
     # silently shares cookies with main — invisible until a login in one
     # window logs the other out.
     apply_storage_prefix "$wt_env"
-    vlog "Frontend env already present: $dir/.env (kept; HOST/PORT re-pinned to $port)."
+    vlog "Frontend env already present: $dir/.env (kept; HOST/PORT re-pinned to $port, HMR_PORT to $hmr_port)."
     return 0
   fi
   if [[ ! -f "$main_env" ]]; then
@@ -160,20 +183,21 @@ prepare_frontend_env() {
     warn "$dir has no .env; falling back to .env.example."
   fi
   if "$DRY_RUN"; then
-    printf '[dry-run] cp %s %s ; set PORT=%s ; rewrite host -> %s ; prefix STORAGE_PREFIX with %s\n' \
-      "$main_env" "$wt_env" "$port" "$host" "$WS_STORAGE_PREFIX"
+    printf '[dry-run] cp %s %s ; set PORT=%s, HMR_PORT=%s ; rewrite host -> %s ; prefix STORAGE_PREFIX with %s\n' \
+      "$main_env" "$wt_env" "$port" "$hmr_port" "$host" "$WS_STORAGE_PREFIX"
     return 0
   fi
   cp "$main_env" "$wt_env"
   set_env_var "$wt_env" HOST "127.0.0.1"
   set_env_var "$wt_env" PORT "$port"
+  set_env_var "$wt_env" HMR_PORT "$hmr_port"
   apply_storage_prefix "$wt_env"
   # Match either scheme and put back the one that was there: BASE_URL is http://
   # in main's .env because that exact string is the registered OAuth redirect
   # URI. Forcing https here breaks the login round-trip, and matching only
   # https leaves http:// entries pointed at main's host.
   sed -i '' -E "/^ECHO_HOST_URL=/!s#(https?)://${BASE_DOMAIN_RE}#\1://${host}#g" "$wt_env"
-  vlog "Frontend env ready: $dir (.env, PORT=$port, host=$host)"
+  vlog "Frontend env ready: $dir (.env, PORT=$port, HMR_PORT=$hmr_port, host=$host)"
   return 0
 }
 

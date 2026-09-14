@@ -9,6 +9,8 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.23.1] — 2026-09-14
+
 ### Fixed
 - `app-designer` was missing from the `APPS` registry, so `ws serve --all-apps`
   silently skipped it: no `.env` was copied into the worktree and no

@@ -22,8 +22,8 @@ Arguments:
   SLUG        Workspace slug. If omitted, auto-detects from the current directory.
 
 Options:
-  --all-apps    Serve every known app (admin, shop, account, panels, outlook)
-                instead of just admin + shop.
+  --all-apps    Serve every known app (admin, shop, account, panels, outlook,
+                designer) instead of just admin + shop.
   --force       Regenerate the worktree .env files and rewrite/reload the nginx
                 block even if they already exist (overwrites manual edits).
   --dry-run     Print all actions (incl. the nginx block) without executing.

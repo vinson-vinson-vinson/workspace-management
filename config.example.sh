@@ -289,6 +289,7 @@ APPS=(
   "account:app-account:/account:3"
   "panels:app-panels:/panel:4"
   "outlook:app-outlook:/outlook:5"
+  "designer:app-designer:/designer:6"
 )
 
 # Apps served by default (without --all-apps). Must be keys present in APPS.

@@ -9,6 +9,14 @@ when a release is tagged.
 
 ## [Unreleased]
 
+### Fixed
+- `app-designer` was missing from the `APPS` registry, so `ws serve --all-apps`
+  silently skipped it: no `.env` was copied into the worktree and no
+  `/designer` location was added to the workspace's nginx block. Registered as
+  `designer:app-designer:/designer:6` (port offset 6 — the next free slot in the
+  10-port block). Existing installs: add the line to your `config.sh` and re-run
+  `ws serve <slug> --all-apps` to pick it up.
+
 ## [2.23.0] — 2026-09-07
 
 ### Added

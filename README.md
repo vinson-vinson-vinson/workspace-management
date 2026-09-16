@@ -120,6 +120,7 @@ Everything is one command, `workspaces` (alias `ws`), with subcommands:
 | `ws test [slug] [args]` | Run the backend suite against the workspace's **own** MySQL test DB (created on demand; args pass through to phpunit), so concurrent runs in different workspaces can't `migrate:fresh` over each other. Fails closed: no isolated DB → no run. Slug defaults to cwd. |
 | `ws trust` | One-time sudoers rule (like `valet trust`) so `ws serve` can test/reload nginx without password prompts. Covers exactly `nginx -t` and `nginx -s reload`; never stores the password. `--revoke` removes it. |
 | `ws url` | Clickable `ws://` deep links: `--install` registers a tiny macOS handler app, `--link <slug>` prints a link to paste into a task or an MR. Following a link runs the matching `ws create`/`open`/`serve` in a new terminal window. See [Deep links](#deep-links). |
+| `ws ui` | Open the local dashboard (`http://localhost:7777`): one card per workspace with branches, git state, serve URL and per-app dev servers — plus buttons for open / serve / create / remove and start/stop/logs per dev server. See [Dashboard](#dashboard-ws-ui). |
 | `ws sync` | Recompute each workspace's VS Code Source Control ignore-list so every window shows only its own two worktrees. Runs automatically on `create`/`remove`. |
 | `ws help` / `ws version` | Banner + command overview / print the version. |
 
@@ -134,7 +135,46 @@ ws serve CU-1234_my-feature --all-apps       # every app in the registry
 ws                                           # list (bare `ws`)
 ws remove                                     # tear down (auto-detects slug from cwd)
 ws remove CU-1234_my-feature --force          # discard local-only work
+ws ui                                         # dashboard over all of the above
 ```
+
+## Dashboard (`ws ui`)
+
+`ws ui` serves a tiny zero-dependency dashboard (Node ≥ 18, no install step) on
+`http://localhost:7777` and opens it. It shells out to *this* checkout's
+dispatcher and reads *this* checkout's `config.sh`, so it always shows the same
+truth as the CLI.
+
+```bash
+ws ui                 # start (detached) + open the browser
+ws ui --port 8888     # different port (or WS_UI_PORT=8888)
+ws ui --no-open       # start without opening a browser
+ws ui --foreground    # run in this terminal (Ctrl-C stops it)
+ws ui --stop          # stop the running server
+```
+
+One card per workspace (MAIN first, then everything under `WORKSPACES_ROOT`):
+frontend/backend branch and git state (`clean` / `uncommitted (n)`), the serve
+URL or “not served”, and each app (`admin`, `shop`, …) with its assigned port
+and a live/stopped dot.
+
+| Button | Runs |
+| --- | --- |
+| **Open in IDE** | `ws open <slug>` (`ws open 0` for MAIN) |
+| **Serve / Re-serve** | `ws serve <slug>`; if the nginx reload needs sudo and there's no TTY it hands off to Terminal.app (run `ws trust` once to avoid this) |
+| **Browser** | opens the served URL |
+| **start / stop** (per app) | spawns `yarn serve-<app>` detached in the worktree with `PORT` pinned to the workspace's assigned port / kills whatever listens on that port |
+| **▤** (per app) | live tail of the dev-server log (`~/.ws-ui/logs/<slug>-<app>.log`) |
+| **＋ Create** | `ws create <slug>` in Terminal.app (so you can watch it) |
+| **🗑 Remove** | confirm → stops running dev servers → `ws remove <slug>` (answers its `[y/N]`; all safety checks still apply). If ws refuses because of uncommitted/unpushed work, the UI says why and only offers `--force` after you type the workspace name. |
+
+The page auto-refreshes every 6 s while visible; data comes from `ws list -q` +
+`ws status <slug> --json`. Server log: `~/.ws-ui/server.log`.
+
+**Raycast:** `ui/raycast/ws-ui.sh` is a Raycast Script Command (“Workspaces
+UI”) that starts the server if nothing listens on the port, then opens the
+dashboard. Raycast → Settings → Extensions → Script Commands → **Add
+Directories** → pick `<this repo>/ui/raycast`, then bind a hotkey to it.
 
 ## Deep links
 
@@ -333,7 +373,9 @@ What lives where on disk once you're set up:
   cloned `vendor/`, an installed `node_modules/` — none of which touch your main
   clones. They vanish with the session dir on `ws remove`.
 - **The tooling itself** (this repo) lives wherever you cloned it; only `config.sh`
-  ties it to the `ROOT_DIR` above.
+  ties it to the `ROOT_DIR` above. `lib/` holds one file per subcommand, `ui/`
+  the dashboard (`server.mjs` + `index.html` + the Raycast script) served by
+  `ws ui`.
 
 ## License
 

@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ws · workspaces</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #0f1115; --card: #171a21; --line: #262a34; --fg: #e6e8ee; --dim: #8a90a0;
+    --green: #3ddc84; --red: #ff5f6d; --amber: #f5b942; --cyan: #5cc8ff; --accent: #7c8cff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 ui-sans-serif, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; padding: 16px 24px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 2; }
+  header h1 { font-size: 16px; margin: 0; letter-spacing: .04em; }
+  header h1 span { color: var(--accent); }
+  header .spacer { flex: 1; }
+  header .meta { color: var(--dim); font-size: 12px; }
+  main { padding: 20px 24px; display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .card.main { border-color: #2f3a5a; }
+  .card.error { border-color: var(--red); }
+  .title { display: flex; align-items: center; gap: 10px; }
+  .title .idx { font-family: ui-monospace, monospace; color: var(--dim); font-size: 12px; min-width: 18px; }
+  .title .name { font-weight: 600; font-size: 15px; word-break: break-all; }
+  .title .tag { font-size: 10px; padding: 2px 6px; border-radius: 4px; background: #2a3150; color: var(--cyan); font-weight: 600; }
+  .repo { display: grid; grid-template-columns: 76px 1fr auto; gap: 6px 10px; font-size: 13px; align-items: center; }
+  .repo .k { color: var(--dim); }
+  .repo .branch { font-family: ui-monospace, monospace; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .git { font-size: 11px; padding: 1px 6px; border-radius: 4px; background: #23262f; color: var(--dim); white-space: nowrap; }
+  .git.dirty { color: var(--amber); background: #3a2f16; }
+  .url { font-family: ui-monospace, monospace; font-size: 12px; }
+  .url a { color: var(--green); text-decoration: none; }
+  .url a:hover { text-decoration: underline; }
+  .url .none { color: var(--dim); }
+  .servers { display: flex; flex-wrap: wrap; gap: 6px; }
+  .srv { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; font-size: 12px; font-family: ui-monospace, monospace; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #444a58; }
+  .dot.on { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .srv button { padding: 1px 6px; font-size: 11px; }
+  .srv.unproxied { border-style: dashed; opacity: .8; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; padding-top: 4px; }
+  button { background: #22262f; color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 11px; font: inherit; font-size: 13px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { filter: brightness(1.1); }
+  button.danger:hover { border-color: var(--red); color: var(--red); }
+  button:disabled { opacity: .5; cursor: progress; }
+  .create { display: flex; gap: 8px; }
+  .create input { background: #12141a; border: 1px solid var(--line); color: var(--fg); border-radius: 6px; padding: 6px 10px; font: inherit; font-size: 13px; width: 220px; }
+  #log { position: fixed; bottom: 0; left: 0; right: 0; max-height: 40vh; background: #0a0b0e; border-top: 1px solid var(--line); display: none; flex-direction: column; z-index: 3; }
+  #log.show { display: flex; }
+  #log .bar { display: flex; align-items: center; gap: 10px; padding: 6px 16px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--dim); }
+  #log pre { margin: 0; padding: 10px 16px; overflow: auto; font: 12px/1.4 ui-monospace, monospace; color: #cfd3dc; white-space: pre-wrap; }
+  #toast { position: fixed; top: 64px; right: 24px; background: #22262f; border: 1px solid var(--line); padding: 8px 12px; border-radius: 6px; font-size: 13px; display: none; z-index: 4; }
+  .err { color: var(--red); font-size: 12px; font-family: ui-monospace, monospace; }
+</style>
+</head>
+<body>
+<header>
+  <h1><span>ws</span> · workspaces</h1>
+  <div class="create">
+    <input id="newSlug" placeholder="CU-1234_my-feature" spellcheck="false">
+    <button onclick="createWs()">＋ Create</button>
+  </div>
+  <div class="spacer"></div>
+  <div class="meta" id="meta">loading…</div>
+  <button onclick="refresh(true)">↻ Refresh</button>
+</header>
+<main id="list"></main>
+
+<div id="log">
+  <div class="bar"><b id="logTitle"></b><span class="spacer" style="flex:1"></span><button onclick="hideLog()">✕</button></div>
+  <pre id="logBody"></pre>
+</div>
+<div id="toast"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+let data = null, logTimer = null, logCtx = null, bootId = null;
+
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {});
+  return r.json();
+}
+function toast(msg, ms = 2500) {
+  const t = $('#toast'); t.textContent = msg; t.style.display = 'block';
+  clearTimeout(t._t); t._t = setTimeout(() => (t.style.display = 'none'), ms);
+}
+
+async function refresh(manual) {
+  if (manual) $('#meta').textContent = 'refreshing…';
+  try {
+    data = await api('/api/workspaces');
+    if (bootId && data.bootId && data.bootId !== bootId) return location.reload(); // server restarted → pick up new UI
+    bootId = data.bootId;
+    render();
+    $('#meta').textContent = `${data.workspaces.length} workspaces · ${new Date(data.generatedAt).toLocaleTimeString()}`;
+  } catch (e) { $('#meta').textContent = 'error: ' + e; }
+}
+
+function gitBadge(g) { return `<span class="git ${g === 'clean' ? '' : 'dirty'}">${esc(g)}</span>`; }
+
+function render() {
+  $('#list').innerHTML = data.workspaces.map((w) => {
+    if (w.error) return `<div class="card error"><div class="title"><span class="idx">${w.index}</span><span class="name">${esc(w.slug)}</span></div><div class="err">${esc(w.error)}</div></div>`;
+    const fe = w.frontend || {}, be = w.backend || {};
+    const servers = (fe.servers || []).map((s) => `
+      <span class="srv ${s.proxied === false ? 'unproxied' : ''}" title="port ${s.port ?? '?'}${s.proxied === false ? ' — not routed by ws serve (use --all-apps)' : ''}">
+        <span class="dot ${s.running ? 'on' : ''}"></span>${esc(s.app)} <span style="color:var(--dim)">:${s.port ?? '?'}</span>
+        ${s.running
+          ? `<button class="danger" onclick="devStop('${esc(w.slug)}','${esc(s.app)}',${s.port})">stop</button>`
+          : `<button onclick="devStart('${esc(w.slug)}','${esc(s.app)}',${s.port ?? 'null'})">start</button>`}
+        <button onclick="showLog('${esc(w.slug)}','${esc(s.app)}')" title="log">▤</button>
+      </span>`).join('');
+    const url = w.url
+      ? `<a href="${esc(w.url)}" target="_blank" rel="noopener">${esc(w.url)}</a>`
+      : `<span class="none">not served</span>`;
+    return `
+      <div class="card ${w.main ? 'main' : ''}">
+        <div class="title">
+          <span class="idx">${w.index}</span>
+          <span class="name">${esc(w.slug)}</span>
+          ${w.main ? '<span class="tag">MAIN</span>' : ''}
+        </div>
+        <div class="repo">
+          <span class="k">frontend</span><span class="branch" title="${esc(fe.branch)}">${esc(fe.branch)}</span>${gitBadge(fe.git)}
+          <span class="k">backend</span><span class="branch" title="${esc(be.branch)}">${esc(be.branch)}</span>${gitBadge(be.git)}
+        </div>
+        <div class="url">${url}</div>
+        <div class="servers">${servers}</div>
+        <div class="actions">
+          <button class="primary" onclick="act(this,'/api/open',{slug:'${esc(w.slug)}'},'Opening ${esc(w.slug)} in IDE…')">⇄ Open in IDE</button>
+          ${w.main ? '' : `<button onclick="act(this,'/api/serve',{slug:'${esc(w.slug)}'},'Serving ${esc(w.slug)}…')">${w.served ? '↻ Re-serve' : '▶ Serve'}</button>`}
+          ${w.url ? `<button onclick="window.open('${esc(w.url)}','_blank')">↗ Browser</button>` : ''}
+          ${w.main ? '' : `<button class="danger" style="margin-left:auto" onclick="removeWs(this,'${esc(w.slug)}')">🗑 Remove</button>`}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function act(btn, path, body, msg) {
+  btn.disabled = true; toast(msg, 4000);
+  try {
+    const r = await api(path, body);
+    if (r.handedToTerminal) toast('Needs sudo — continued in Terminal.app', 5000);
+    else if (r.ok === false) { showText(`${path} ${body.slug}`, (r.stdout || '') + (r.stderr || '')); toast('Failed — see log', 4000); }
+    else if (r.stdout && r.stdout.trim()) showText(`${path} ${body.slug}`, r.stdout + (r.stderr || ''));
+  } finally { btn.disabled = false; setTimeout(refresh, 800); }
+}
+
+async function devStart(slug, app, port) {
+  toast(`Starting ${app} for ${slug}…`);
+  const r = await api('/api/dev/start', { slug, app, port });
+  if (r.ok === false) toast(r.stderr || 'failed', 4000);
+  showLog(slug, app);
+  setTimeout(refresh, 2500);
+}
+async function devStop(slug, app, port) {
+  toast(`Stopping ${app} for ${slug}…`);
+  await api('/api/dev/stop', { slug, app, port });
+  setTimeout(refresh, 1200);
+}
+async function removeWs(btn, slug) {
+  const w = data.workspaces.find((x) => x.slug === slug) || {};
+  const dirty = [w.frontend, w.backend].some((r) => r && r.git && r.git !== 'clean');
+  const running = (w.frontend?.servers || []).filter((s) => s.running).map((s) => s.app);
+  if (!confirm(`Remove workspace "${slug}"?\n\nThis reverts its nginx routing, removes both git worktrees, deletes the local branches and the session directory.`
+    + (w.served ? '\n\n⚠ It is currently served.' : '')
+    + (running.length ? `\n⚠ Dev servers still running: ${running.join(', ')} (they will be stopped first).` : '')
+    + (dirty ? '\n⚠ It has uncommitted changes — ws will refuse unless forced.' : ''))) return;
+
+  btn.disabled = true; toast(`Removing ${slug}…`, 6000);
+  try {
+    for (const s of (w.frontend?.servers || []).filter((s) => s.running)) await api('/api/dev/stop', { port: s.port });
+    let r = await api('/api/remove', { slug });
+    if (r.handedToTerminal) { toast('Needs sudo — continued in Terminal.app', 5000); return; }
+    if (r.ok) { toast(`Removed ${slug}`); return; }
+
+    showText(`ws remove ${slug}`, (r.stdout || '') + (r.stderr || ''));
+    if (!r.refused) { toast('Failed — see log', 4000); return; }
+
+    // Safety check refused: force only with an explicit, typed confirmation.
+    const typed = prompt(`ws refused: the workspace has local-only work (see log).\n\nTo DISCARD it and force removal, type the workspace name:\n${slug}`);
+    if (typed !== slug) { toast('Kept.'); return; }
+    r = await api('/api/remove', { slug, force: true });
+    if (r.handedToTerminal) toast('Needs sudo — continued in Terminal.app', 5000);
+    else if (r.ok) toast(`Force-removed ${slug}`);
+    else { showText(`ws remove ${slug} --force`, (r.stdout || '') + (r.stderr || '')); toast('Failed — see log', 4000); }
+  } finally { btn.disabled = false; setTimeout(refresh, 1500); }
+}
+
+async function createWs() {
+  const slug = $('#newSlug').value.trim();
+  if (!slug) return;
+  const r = await api('/api/create', { slug });
+  toast(r.ok === false ? (r.stderr || 'failed') : `Creating ${slug} in Terminal.app…`, 4000);
+  $('#newSlug').value = '';
+  setTimeout(refresh, 5000);
+}
+
+function showText(title, text) {
+  clearInterval(logTimer); logCtx = null;
+  $('#logTitle').textContent = title; $('#logBody').textContent = text || '(no output)';
+  $('#log').classList.add('show');
+}
+function showLog(slug, app) {
+  clearInterval(logTimer); logCtx = { slug, app };
+  $('#logTitle').textContent = `${slug} · yarn serve-${app}`;
+  $('#log').classList.add('show');
+  const tick = async () => {
+    if (!logCtx) return;
+    const r = await api(`/api/logs?slug=${encodeURIComponent(slug)}&app=${encodeURIComponent(app)}`);
+    const pre = $('#logBody'); const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 8;
+    pre.textContent = r.log || '(no log yet)';
+    if (atBottom) pre.scrollTop = pre.scrollHeight;
+  };
+  tick(); logTimer = setInterval(tick, 1500);
+}
+function hideLog() { clearInterval(logTimer); logCtx = null; $('#log').classList.remove('show'); }
+
+$('#newSlug').addEventListener('keydown', (e) => e.key === 'Enter' && createWs());
+refresh();
+setInterval(() => document.visibilityState === 'visible' && refresh(), 6000);
+</script>
+</body>
+</html>

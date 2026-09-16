@@ -9,6 +9,28 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.22.0] — 2026-09-16
+
+### Added
+- `ws ui` — a local dashboard over the CLI, vendored into this repo as `ui/`
+  (zero dependencies, Node ≥ 18, nothing to install). One card per workspace
+  (MAIN first): frontend/backend branch and git state, the serve URL, and every
+  registered app with its assigned port and a live/stopped dot. Buttons run the
+  same commands you'd type — `ws open`, `ws serve`, `ws create`, `ws remove` —
+  plus start/stop of a `yarn serve-<app>` dev server (port pinned to the
+  workspace's allocation) and a live tail of its log. Commands that need sudo
+  without a TTY (nginx reload on serve/remove) hand off to Terminal.app, and
+  `ws remove`'s safety checks still apply: a refusal is shown with its reason
+  and `--force` is only offered after you retype the workspace name.
+  Options: `--port`, `--no-open`, `--foreground`, `--stop`.
+- `ui/raycast/ws-ui.sh`, a Raycast Script Command ("Workspaces UI") that starts
+  the server if it isn't running and opens the dashboard.
+
+### Changed
+- The dashboard resolves the dispatcher and `config.sh` from its own checkout
+  (`WSM_HOME`, with `WS_BIN`/`WSM_CONFIG` as overrides) instead of a hard-coded
+  path under `$HOME`, so it can't drift onto a different install.
+
 ## [2.21.1] — 2026-08-28
 
 ### Fixed

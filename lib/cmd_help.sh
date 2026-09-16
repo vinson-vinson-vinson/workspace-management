@@ -19,6 +19,7 @@ ${C_BOLD}Commands${C_RESET}
   ${C_GREEN}serve${C_RESET} [slug] [options]    Serve a workspace at its subdomain ${C_DIM}(defaults to cwd)${C_RESET}
   ${C_GREEN}share${C_RESET} [slug]              Expose a workspace (or main) via ngrok ${C_DIM}(foreground; Ctrl-C to stop)${C_RESET}
   ${C_GREEN}status${C_RESET} [slug]             Workspace health check ${C_DIM}(branches, git, serving, ports, deps)${C_RESET}
+  ${C_GREEN}ui${C_RESET}                       Local dashboard for every workspace ${C_DIM}(http://localhost:7777)${C_RESET}
   ${C_GREEN}mr${C_RESET} [--fe|--be|--all]      Open/create a GitLab MR per repo ${C_DIM}(only where the branch is ahead)${C_RESET}
   ${C_GREEN}remove${C_RESET} [slug] [options]   Tear a workspace down safely ${C_DIM}(defaults to cwd)${C_RESET}
   ${C_GREEN}test${C_RESET} [slug] [args]       Run the backend suite on the workspace's OWN test DB ${C_DIM}(defaults to cwd)${C_RESET}
@@ -32,6 +33,7 @@ ${C_BOLD}Examples${C_RESET}
   ws create CU-1234_my-feature
   ws                          ${C_DIM}# list${C_RESET}
   ws serve                    ${C_DIM}# serve the workspace you're in${C_RESET}
+  ws ui                       ${C_DIM}# open the dashboard${C_RESET}
   ws remove --dry-run
 
 Run ${C_CYAN}ws <command> --help${C_RESET} for command-specific options.

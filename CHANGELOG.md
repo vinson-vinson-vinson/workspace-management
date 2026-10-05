@@ -9,6 +9,8 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.24.0] — 2026-10-05
+
 ### Added
 - `ws recolor [N|slug]`: give an existing workspace a new accent color. Uses the
   same picker as `ws create` (random from the more-isolated half of the unused

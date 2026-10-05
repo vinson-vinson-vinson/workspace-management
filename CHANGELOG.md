@@ -9,6 +9,21 @@ when a release is tagged.
 
 ## [Unreleased]
 
+### Added
+- `ws recolor [N|slug]`: give an existing workspace a new accent color. Uses the
+  same picker as `ws create` (random from the more-isolated half of the unused
+  palette); the workspace's current color counts as taken, so the new one is
+  always clearly different. Only the color keys in the `.code-workspace` are
+  rewritten, so an open VS Code window recolors live and hand edits survive.
+  `--color '#rrggbb'` sets an exact color; `--dry-run` previews. The tinted
+  favicons follow on the next `ws serve`, the Chrome (MCP) window on its next
+  launch, and `ws stats` draws the workspace in its new color.
+
+### Changed
+- The accent picker (`random_workspace_color`, `_rand_below`,
+  `contrast_foreground`) moved from `lib/cmd_create.sh` to `lib/common.sh` so
+  `create` and `recolor` share one implementation. No behavior change.
+
 ## [2.23.1] — 2026-09-14
 
 ### Fixed

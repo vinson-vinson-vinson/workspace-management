@@ -25,6 +25,7 @@ ${C_BOLD}Commands${C_RESET}
   ${C_GREEN}sync${C_RESET}                     Refresh each window's Source Control repo list ${C_DIM}(auto on create/remove)${C_RESET}
   ${C_GREEN}trust${C_RESET} [--revoke]         Stop serve's sudo prompts for good ${C_DIM}(one-time sudoers rule)${C_RESET}
   ${C_GREEN}url${C_RESET} [--install|--link]  Clickable ${C_DIM}ws://${C_RESET} deep links ${C_DIM}(open/create/serve a workspace)${C_RESET}
+  ${C_GREEN}recolor${C_RESET} [N|slug]         Give a workspace a new accent color ${C_DIM}(same picker as create)${C_RESET}
   ${C_GREEN}stats${C_RESET} [--json]           Usage stats + a scrollable timeline of your workspaces
   ${C_GREEN}help${C_RESET}                     Show this help
   ${C_GREEN}version${C_RESET}                  Print the version

@@ -1142,6 +1142,101 @@ _ws_color() {
     | grep -o '#[0-9a-fA-F]\{6\}' | head -n1
 }
 
+# Pick a legible title-bar foreground ("dark"/"light") for a "#rrggbb" bg using
+# the W3C relative-luminance threshold.
+contrast_foreground() {
+  local hex="${1#\#}" r g b lum
+  r=$((16#${hex:0:2})); g=$((16#${hex:2:2})); b=$((16#${hex:4:2}))
+  lum=$(((r * 299 + g * 587 + b * 114) / 1000))
+  if ((lum > 150)); then printf 'dark'; else printf 'light'; fi
+}
+
+# Uniform random index in [0, $1) from /dev/urandom. We deliberately do NOT use
+# $RANDOM: cmd_create picks the color via `$(random_workspace_color)`, and inside
+# command substitution bash 3.2 seeds $RANDOM straight from the PID — so
+# `$RANDOM % n` on consecutive `ws create` runs walks ADJACENT palette entries,
+# i.e. near-identical hues (the "same green every time" bug). urandom sidesteps
+# the PID entirely.
+_rand_below() {
+  local n="$1" r
+  r="$(od -An -N4 -tu4 /dev/urandom 2>/dev/null | tr -dc '0-9')"
+  [[ -n "$r" ]] || r="${RANDOM}${RANDOM}$$"   # fallback if /dev/urandom is missing
+  printf '%s' "$(( r % n ))"
+}
+
+# Neon palette: 25 evenly-spaced hues at high saturation (HSL 90/61). A new
+# workspace's color is drawn at RANDOM from the more-isolated HALF of the unused
+# colors: each unused color is scored by the distance (min squared RGB) to the
+# colors already live, ranked most-isolated first, the top half kept, and one of
+# those picked at random. Keeps accents well spread without always returning the
+# same argmax (which in RGB is biased toward the palette's primary-cube corners,
+# so a plain farthest-point pick cycled the same 5-7 colors). Recycles only once
+# more than 25 are live at the same time.
+random_workspace_color() {
+  local -a palette=(
+    '#f54242' '#f56d42' '#f59842' '#f5c342' '#f5ee42'
+    '#d1f542' '#a6f542' '#7bf542' '#50f542' '#42f55f'
+    '#42f58a' '#42f5b5' '#42f5e0' '#42e0f5' '#42b5f5'
+    '#428af5' '#425ff5' '#5042f5' '#7b42f5' '#a642f5'
+    '#d142f5' '#f542ee' '#f542c3' '#f54298' '#f5426d'
+  )
+  # Colors already worn by existing workspaces (any color, not just palette ones).
+  local -a used=()
+  local slug c
+  while IFS= read -r slug; do
+    [[ -n "$slug" ]] || continue
+    c="$(_ws_color "$slug")"
+    [[ "$c" =~ ^#[0-9a-fA-F]{6}$ ]] && used+=("$c")
+  done < <(workspace_slugs)
+
+  # Nothing to stay clear of yet — pick any palette color at random.
+  if (( ${#used[@]} == 0 )); then
+    printf '%s' "${palette[$(_rand_below "${#palette[@]}")]}"
+    return
+  fi
+
+  # Candidates: palette colors no one's wearing (no reuse). If all 25 are taken,
+  # allow the whole palette so we still return the most-isolated one.
+  local -a cand=() u seen
+  for c in "${palette[@]}"; do
+    seen=0
+    for u in "${used[@]}"; do [[ "$u" == "$c" ]] && { seen=1; break; }; done
+    (( seen )) || cand+=("$c")
+  done
+  (( ${#cand[@]} > 0 )) || cand=( "${palette[@]}" )
+
+  # Decompose the used colors into RGB once.
+  local -a ur=() ug=() ub=()
+  for c in "${used[@]}"; do
+    c="${c#\#}"; ur+=($((16#${c:0:2}))); ug+=($((16#${c:2:2}))); ub+=($((16#${c:4:2})))
+  done
+
+  # Score each candidate by its NEAREST used color (min squared RGB distance),
+  # then rank most-isolated first and keep the top half — a weighted shortlist
+  # of the colors most distinct from what's live.
+  local cr cg cb i mind d dr dg db h
+  local -a scored=()
+  for c in "${cand[@]}"; do
+    h="${c#\#}"; cr=$((16#${h:0:2})); cg=$((16#${h:2:2})); cb=$((16#${h:4:2}))
+    mind=-1
+    for i in "${!ur[@]}"; do
+      dr=$((cr - ur[i])); dg=$((cg - ug[i])); db=$((cb - ub[i]))
+      d=$((dr * dr + dg * dg + db * db))
+      if (( mind < 0 || d < mind )); then mind=$d; fi
+    done
+    scored+=("$mind $c")
+  done
+  # Rank by score (desc); slice off the more-isolated half (ceil, so always >=1).
+  local -a ranked=()
+  local line
+  while IFS= read -r line; do ranked+=("${line#* }"); done \
+    < <(printf '%s\n' "${scored[@]}" | sort -rn -k1,1)
+  local half=$(( (${#ranked[@]} + 1) / 2 ))
+  local -a top=( "${ranked[@]:0:$half}" )
+  # Pick one of that half at random.
+  printf '%s' "${top[$(_rand_below "${#top[@]}")]}"
+}
+
 # Derive a DNS-safe subdomain label from a slug: the task id for a task slug
 # (CU-1234_x -> cu-1234), else the whole slug, lowercased with non-DNS chars
 # collapsed to '-'. Returns 1 if nothing usable remains.

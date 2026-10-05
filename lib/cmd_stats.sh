@@ -116,6 +116,12 @@ for e in events:
         spans.append(sp)
         open_by[slug] = sp
         created += 1
+    elif ev == "recolor":
+        # The timeline draws a workspace in the color it wears NOW.
+        sp = open_by.get(slug)
+        if sp is not None:
+            if e.get("color"):
+                sp["color"] = e["color"]
     elif ev == "remove":
         sp = open_by.pop(slug, None)
         if sp is not None:

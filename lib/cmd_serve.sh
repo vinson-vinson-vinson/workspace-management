@@ -423,22 +423,22 @@ render_nginx_block() {
   cat <<EOF
 # Managed by \`ws serve\` — task workspace ${host}
 # Frontend paths proxy to the worktree Nuxt dev servers; everything else is the
-# worktree Laravel backend (served via valet php-fpm, sharing the main DB).
+# worktree Laravel backend ($(nginx_backend_note), sharing the main DB).
 server {
-    listen 127.0.0.1:80;
+    listen $(nginx_listen_http);
     server_name ${host};
-    return 301 https://\$host\$request_uri;
+    return 301 https://\$host$(url_port_suffix)\$request_uri;
 }
 
 server {
-    listen 127.0.0.1:443 ssl;
+    listen $(nginx_listen_https) ssl;
     http2 on;
     server_name ${host};
     charset utf-8;
     client_max_body_size 512M;
 
-    ssl_certificate "${VALET_CERT}";
-    ssl_certificate_key "${VALET_CERT_KEY}";
+    ssl_certificate "$(nginx_cert)";
+    ssl_certificate_key "$(nginx_cert_key)";
 
     # --- worktree frontend (Nuxt dev servers) ---
 ${locations}
@@ -452,7 +452,7 @@ ${locations}
 
     location ~ [^/]\.php(/|\$) {
         fastcgi_split_path_info ^(.+?\.php)(/.*)\$;
-        fastcgi_pass "unix:${VALET_PHP_SOCK}";
+        fastcgi_pass "$(nginx_fastcgi_pass)";
         fastcgi_index index.php;
         include fastcgi_params;
         fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
@@ -463,7 +463,7 @@ ${locations}
     location ~ /\.ht { deny all; }
 
     access_log off;
-    error_log "${VALET_LOG}";
+    error_log "$(nginx_error_log)";
 }
 EOF
 }
@@ -473,7 +473,7 @@ EOF
 ensure_nginx() {
   local host="$1"; shift
   local -a apps=("$@")
-  local conf="$VALET_NGINX_DIR/$host"
+  local conf="$NGINX_SITES_DIR/$host"
 
   local locations="" app route port
   for app in "${apps[@]}"; do
@@ -507,6 +507,9 @@ ensure_nginx() {
   ensure_sudo_for_nginx \
     || { err "sudo is required to reload nginx. Routing left unchanged — re-run 'ws serve'."; exit 1; }
 
+  # The docker runtime's nginx has to be running to take the reload.
+  runtime_ensure_up || { err "The docker runtime isn't running. Routing left unchanged — see 'ws runtime status'."; exit 1; }
+  mkdir -p "$NGINX_SITES_DIR"
   printf '%s\n' "$expected" >"$conf"
   vlog "Wrote nginx block: $conf"
   ok "nginx setup successfully"
@@ -747,7 +750,7 @@ setup_dependencies() {
              "$WT_BACKEND/storage/logs" \
              "$WT_BACKEND/bootstrap/cache"
     chmod -R ug+w "$WT_BACKEND/storage" "$WT_BACKEND/bootstrap/cache" 2>/dev/null || true
-    ( cd "$WT_BACKEND" && php artisan config:clear >/dev/null 2>&1 || true )
+    ws_php_in "$WT_BACKEND" artisan config:clear >/dev/null 2>&1 || true
   fi
 }
 
@@ -777,12 +780,15 @@ cmd_serve() {
 
   require_command git
   require_command sed
-  require_command nginx
+  if runtime_is_docker; then require_command docker; else require_command nginx; fi
   require_command cksum
   require_command yarn
 
-  [[ -f "$VALET_CERT" && -f "$VALET_CERT_KEY" ]] \
-    || { err "Wildcard cert not found ($VALET_CERT). Is $BASE_DOMAIN secured in Valet?"; exit 1; }
+  if [[ ! -f "$(host_cert)" || ! -f "$(host_cert_key)" ]]; then
+    if runtime_is_docker; then err "Wildcard cert not found ($(host_cert)). Run 'ws runtime setup' once."
+    else err "Wildcard cert not found ($VALET_CERT). Is $BASE_DOMAIN secured in Valet?"; fi
+    exit 1
+  fi
 
   if [[ -z "$slug" ]]; then
     slug="$(slug_from_cwd)" || {
@@ -915,7 +921,7 @@ _ws_landing_box() {
     path="$(app_route "$app")"
   fi
 
-  local url="https://${host}${path}"
+  local url="https://${host}$(url_port_suffix)${path}"
   local inner="  ${label}   ${url}  "
   local w=${#inner}
   local rule; rule="$(ws_rule '─' "$w")"

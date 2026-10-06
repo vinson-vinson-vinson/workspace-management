@@ -9,6 +9,19 @@ when a release is tagged.
 
 ## [Unreleased]
 
+### Added
+- **Docker runtime** (`RUNTIME="docker"`): nginx and the backend's production php-fpm image (`WS_PHP_IMAGE`) as
+  containers on the host network, in place of Valet. Same routes, same `.env` handling, no sudo
+  for reloads, PHP as production runs it. Valet stays the default; nothing changes without the
+  setting.
+- `ws runtime up|down|restart|status|logs|setup|pull` for the docker runtime. `up` checks that
+  both ports are answered by the runtime's own nginx and stops with nginx's error when a port is
+  taken.
+- `ws artisan …` / `ws php …`: PHP in the checkout you're in, in the container with the docker
+  runtime and on the host with Valet. The queue tab defaults to `ws artisan horizon` with docker.
+- `ws test`, Horizon detection in `ws status` and the per-workspace test DB work without a host PHP
+  or mysql client under the docker runtime.
+
 ## [2.24.0] — 2026-10-05
 
 ### Added

@@ -18,7 +18,8 @@ cmd_test_usage() {
 Usage:
   ws test [SLUG] [phpunit args...]
 
-Runs `php vendor/bin/phpunit` in the workspace's backend worktree with
+Runs `php vendor/bin/phpunit` in the workspace's backend worktree (inside the
+php container with RUNTIME=docker) with
 DB_DATABASE pointed at the workspace's own test database
 (<TEST_DB_PREFIX>_<short-label>, e.g. anny_bookings_test_cu_1234). The DB is
 created on demand; the first run loads the schema (~35s), later runs are
@@ -77,8 +78,12 @@ cmd_test() {
   [[ -f "$wt_backend/vendor/bin/phpunit" ]] \
     || { err "No vendor/bin/phpunit in the worktree — run 'ws serve $slug' first (installs dependencies)."; exit 1; }
 
-  require_command php
-  require_command mysql
+  if runtime_is_docker; then
+    runtime_ensure_up || exit 1
+  else
+    require_command php
+    require_command mysql
+  fi
 
   local db
   db="$(resolve_test_db "$slug")" \
@@ -100,5 +105,9 @@ cmd_test() {
   # The CLI php.ini limit is whatever the machine happens to have; a full suite
   # run exhausts a default 128M long before it finishes.
   "$DRY_RUN" || log_ws_event test "$slug"
+  if runtime_is_docker; then
+    ws_php_in "$wt_backend" --env "DB_DATABASE=$db" -d memory_limit="$TEST_MEMORY_LIMIT" vendor/bin/phpunit "$@"
+    exit $?
+  fi
   DB_DATABASE="$db" exec php -d memory_limit="$TEST_MEMORY_LIMIT" vendor/bin/phpunit "$@"
 }

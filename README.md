@@ -26,8 +26,10 @@ adapts to your own repos, branches, domain, and app layout.
 - **python3** — for `ws sync` (keeps each workspace's Source Control ignore-list
   current); usually already present, and skipped with a warning if not.
 - For `ws serve` only: **Laravel Valet** (nginx + a wildcard cert for
-  your domain), `nginx`, `yarn`, and `sudo` access to reload nginx. If you don't
-  serve workspaces you can ignore that command entirely.
+  your domain), `nginx`, `yarn`, and `sudo` access to reload nginx. Or, with
+  `RUNTIME="docker"`, **Docker** instead of Valet; see
+  [Runtime: Valet or Docker](#runtime-valet-or-docker). If you don't serve
+  workspaces you can ignore that command entirely.
 
 ## Install
 
@@ -233,6 +235,60 @@ client**, once:
 
    The existing URL is kept; the `*.` variant is added alongside it. Repeat for
    each client, using that client's own callback path.
+
+## Runtime: Valet or Docker
+
+`ws serve` needs an nginx and a php-fpm on `127.0.0.1`. `RUNTIME` in `config.sh` picks where
+they come from:
+
+| | `valet` (default) | `docker` |
+|---|---|---|
+| nginx + php-fpm | Laravel Valet, installed on the Mac | two containers on the host network: nginx, and your backend's own **production php-fpm image** (`WS_PHP_IMAGE`) with dev settings (opcache revalidates, workers start on demand) |
+| PHP version | whatever Homebrew has | the version and build production runs |
+| Reloading nginx | `sudo` (or `ws trust`) | no sudo |
+| `ws test`, the queue tab | host `php`, host `mysql` client | inside the php container; no host PHP or mysql client needed |
+
+Everything else stays the same in both: the Nuxt dev servers run on the Mac (fast file watching),
+MySQL, Redis and the other services are whatever the main `.env` points at, and the nginx block
+`ws serve` writes per workspace has the same routes. On the host network, `127.0.0.1` in a
+container is the Mac's `127.0.0.1`, so the copied `.env` files work unchanged.
+
+**Switching to docker, once:**
+
+1. Docker with host networking on macOS: [OrbStack](https://orbstack.dev) (recommended), or
+   Docker Desktop with host networking turned on.
+2. `WS_PHP_IMAGE` in `config.sh`: the php-fpm image your backend runs in production (`ws` has
+   no default for it). If its registry is private, `docker login <registry>` once.
+3. `brew install mkcert && mkcert -install` (a trusted wildcard cert for `BASE_DOMAIN`). If you
+   already secured the domain in Valet, its cert is reused.
+4. In `config.sh`: `RUNTIME="docker"`. Then free ports 80/443 (`valet stop`) and run
+   `ws runtime setup`. It makes the cert, checks DNS and ports, pulls the images and starts the
+   runtime. `*.BASE_DOMAIN` has to resolve to `127.0.0.1`: Valet's dnsmasq already does that, and
+   `ws runtime setup` prints the dnsmasq commands if it doesn't.
+
+**Commands:**
+
+```bash
+ws runtime status        # containers, ports, served sites
+ws runtime logs php      # follow one container (or both without a name)
+ws runtime down          # stop; `ws serve` starts it again when needed
+ws artisan migrate       # php artisan in the container, in the checkout you're in
+ws php vendor/bin/phpunit --filter=Foo
+```
+
+The main checkouts are served at `https://BASE_DOMAIN`, like `valet link` did. The queue tab
+defaults to `ws artisan horizon`, which runs Horizon in the container.
+
+**Footprint:** about 250 MB for the whole runtime, however many workspaces it serves: nginx
+takes about 10 MB, and the php container about 240 MB idle, mostly opcache's shared memory, which
+every workspace shares. Workers start per request and stop after 60 s idle, so an idle workspace
+adds nothing. The Nuxt dev servers run on the Mac as before.
+
+**Settings:** `WS_PHP_IMAGE` is required (step 2 above); the rest are optional: `WS_HTTP_PORT` / `WS_HTTPS_PORT`
+(default 80/443), `WS_PHP_PORT` (default 9074), `WS_CERT` / `WS_CERT_KEY`, `WS_RUNTIME_DIR`
+(generated compose file, nginx config, certs and site blocks; default
+`~/.config/workspace-management/runtime`). Other ports than 443 are for trying the runtime next
+to a running Valet: the URLs `ws` prints carry the port, but the `.env` files it copies don't.
 
 ## Hooks
 

@@ -235,6 +235,24 @@ TEST_DB_PASSWORD=""
 # "Allowed memory size exhausted" fatal rather than a test failure.
 TEST_MEMORY_LIMIT="1G"
 
+# ------------------------------ serving runtime ------------------------------
+# Where `ws serve`'s nginx and php-fpm come from: "valet" (Laravel Valet on this
+# Mac, the default) or "docker" (two containers on the host network: nginx and
+# your backend's production php-fpm image). With docker, set WS_PHP_IMAGE and
+# run `ws runtime setup` once; `ws test`, `ws artisan` and the queue tab then run
+# PHP in the container. See the README's "Runtime: Valet or Docker".
+RUNTIME="valet"
+# Docker only, required: the php-fpm image your backend runs in production.
+# WS_PHP_IMAGE="<registry>/<backend>/php-fpm:<tag>"
+# Everything below is optional.
+# WS_HTTP_PORT=80
+# WS_HTTPS_PORT=443
+# WS_PHP_PORT=9074
+# Reused from Valet when $VALET_CERT exists, else created by `ws runtime setup`.
+# WS_CERT="$HOME/.config/workspace-management/runtime/certs/anny.test.crt"
+# WS_CERT_KEY="$HOME/.config/workspace-management/runtime/certs/anny.test.key"
+# WS_RUNTIME_DIR="$HOME/.config/workspace-management/runtime"
+
 # ------------------------------ serving (ws serve) ---------------------------
 # `ws serve` makes a task worktree reachable at <sub>.$BASE_DOMAIN using Laravel
 # Valet's nginx + wildcard cert. If you don't use `ws serve` you can leave this

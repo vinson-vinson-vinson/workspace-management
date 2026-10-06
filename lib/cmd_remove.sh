@@ -47,7 +47,7 @@ revert_serve_setup() {
     return 0
   fi
   host="${sub}.${BASE_DOMAIN}"
-  conf="$VALET_NGINX_DIR/$host"
+  conf="$NGINX_SITES_DIR/$host"
 
   if [[ ! -f "$conf" ]]; then
     vlog "No nginx block for $host. Nothing to revert."
@@ -57,7 +57,7 @@ revert_serve_setup() {
   vlog "Reverting routing for https://$host"
   if "$DRY_RUN"; then
     printf '[dry-run] rm -f %s\n' "$conf"
-    printf '[dry-run] sudo nginx -t && sudo nginx -s reload\n'
+    printf '[dry-run] nginx -t && nginx -s reload (%s runtime)\n' "$RUNTIME"
     return 0
   fi
 

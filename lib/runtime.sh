@@ -17,6 +17,9 @@
 # -----------------------------------------------------------------------------
 
 runtime_is_docker() { [[ "${RUNTIME:-valet}" == "docker" ]]; }
+# Docker runtime behind portless: portless takes HTTPS on 443 and routes each
+# workspace host to the runtime's nginx, which then listens on plain HTTP only.
+runtime_uses_portless() { runtime_is_docker && [[ "${WS_PROXY:-portless}" == "portless" ]]; }
 
 # docker compose for the runtime's generated project.
 runtime_compose() {
@@ -38,7 +41,10 @@ nginx_cert_key()     { if runtime_is_docker; then printf '/etc/ws-certs/%s' "$(b
 host_cert()          { if runtime_is_docker; then printf '%s' "$WS_CERT"; else printf '%s' "$VALET_CERT"; fi; }
 host_cert_key()      { if runtime_is_docker; then printf '%s' "$WS_CERT_KEY"; else printf '%s' "$VALET_CERT_KEY"; fi; }
 # Port suffix for URLs when the docker runtime listens somewhere other than 443.
-url_port_suffix()    { if runtime_is_docker && [[ "$WS_HTTPS_PORT" != "443" ]]; then printf ':%s' "$WS_HTTPS_PORT"; fi; }
+url_port_suffix()    { if runtime_is_docker && ! runtime_uses_portless && [[ "$WS_HTTPS_PORT" != "443" ]]; then printf ':%s' "$WS_HTTPS_PORT"; fi; }
+# What the Nuxt dev servers are told the scheme is. Behind portless nginx sees
+# plain HTTP, but the browser is on HTTPS.
+nginx_forwarded_proto() { if runtime_uses_portless; then printf 'https'; else printf '%s' '$scheme'; fi; }
 
 # --- php ---------------------------------------------------------------------
 # Run php in DIR: on the host (valet) or inside the runtime's php container at
@@ -85,6 +91,32 @@ runtime_sql() {
         $st = $pdo->query(getenv("WS_SQL"));
         foreach (($st ? $st->fetchAll(PDO::FETCH_COLUMN) : []) as $v) echo $v, PHP_EOL;
       } catch (Throwable $e) { echo "ERROR ", $e->getMessage(), PHP_EOL; exit(1); }' 2>&1
+}
+
+# --- portless routes ---------------------------------------------------------
+# Register HOST with portless, pointing at the runtime's nginx. portless keeps
+# /etc/hosts in sync and serves its own trusted certificate. Fails when portless
+# turned HOST into something else, which happens when its TLD list doesn't
+# cover BASE_DOMAIN (it then appends .localhost).
+portless_route_add() {
+  local host="$1" out registered
+  command -v "$PORTLESS_BIN" >/dev/null 2>&1 \
+    || { err "portless not found ($PORTLESS_BIN). Install it: npm install -g portless"; return 1; }
+  out="$("$PORTLESS_BIN" alias "$host" "$WS_HTTP_PORT" --force 2>&1)" \
+    || { err "portless alias failed: $out"; return 1; }
+  registered="$(sed -n 's/^Alias registered: \([^ ]*\) .*/\1/p' <<<"$out" | head -1)"
+  if [[ -n "$registered" && "$registered" != "$host" ]]; then
+    "$PORTLESS_BIN" alias --remove "$registered" >/dev/null 2>&1 || true
+    err "portless registered '$registered' instead of '$host': its TLDs don't include $BASE_DOMAIN. Once:"
+    printf '  %s proxy stop && %s proxy start --tld localhost --tld %s\n' "$PORTLESS_BIN" "$PORTLESS_BIN" "$BASE_DOMAIN" >&2
+    return 1
+  fi
+  vlog "portless: https://$host -> 127.0.0.1:$WS_HTTP_PORT"
+}
+
+portless_route_remove() {
+  command -v "$PORTLESS_BIN" >/dev/null 2>&1 || return 0
+  "$PORTLESS_BIN" alias --remove "$1" >/dev/null 2>&1 || true
 }
 
 # --- lifecycle ---------------------------------------------------------------
@@ -138,7 +170,7 @@ runtime_write_files() {
     printf '    volumes:\n'
     printf '      - "%s/nginx.conf:/etc/nginx/nginx.conf:ro"\n' "$rt"
     printf '      - "%s/sites:/etc/nginx/ws-sites:ro"\n' "$rt"
-    printf '      - "%s:/etc/ws-certs:ro"\n' "$cert_dir"
+    runtime_uses_portless || printf '      - "%s:/etc/ws-certs:ro"\n' "$cert_dir"
     while IFS= read -r m; do printf '      - "%s:%s:ro"\n' "$m" "$m"; done < <(runtime_mounts)
     printf '  php:\n'
     printf '    container_name: ws-runtime-php\n'
@@ -186,9 +218,7 @@ runtime_write_files() {
     '    # to be sure these ports reach this nginx and not something else.' \
     '    server {' \
     "        listen 127.0.0.1:${WS_HTTP_PORT} default_server;" \
-    "        listen 127.0.0.1:${WS_HTTPS_PORT} ssl default_server;" \
-    "        ssl_certificate \"$(nginx_cert)\";" \
-    "        ssl_certificate_key \"$(nginx_cert_key)\";" \
+    "$(runtime_uses_portless || printf '        listen 127.0.0.1:%s ssl default_server;\n        ssl_certificate "%s";\n        ssl_certificate_key "%s";' "$WS_HTTPS_PORT" "$(nginx_cert)" "$(nginx_cert_key)")" \
     '        location = /__ws_runtime { add_header X-WS-Runtime 1 always; return 204; }' \
     '        location / { return 404; }' \
     '    }' \
@@ -217,6 +247,26 @@ runtime_write_files() {
     'pm.process_idle_timeout = 60s' > "$rt/fpm-pool.conf"
 }
 
+# Site blocks are written in the shape the current proxy, domain and ports need.
+# After a change to any of them the old blocks would break nginx's start, so
+# they're moved to sites.previous/ and the workspaces need one `ws serve` each.
+runtime_set_aside_stale_sites() {
+  local rt="$WS_RUNTIME_DIR" mode old="" site name
+  mode="$WS_PROXY $BASE_DOMAIN $WS_HTTP_PORT $WS_HTTPS_PORT"
+  [[ -f "$rt/.mode" ]] && old="$(cat "$rt/.mode")"
+  if [[ -n "$old" && "$old" != "$mode" ]] && compgen -G "$rt/sites/*" >/dev/null; then
+    mkdir -p "$rt/sites.previous"
+    for site in "$rt"/sites/*; do
+      name="$(basename "$site")"
+      mv -f "$site" "$rt/sites.previous/"
+      # the main site (old or new domain) is rewritten by runtime up itself
+      [[ "$name" == "$BASE_DOMAIN" || "$name" == "$(awk '{print $2}' <<<"$old")" ]] && continue
+      warn "set aside the block for $name (proxy, domain or ports changed). Re-serve it: ws serve <its slug>"
+    done
+  fi
+  printf '%s' "$mode" > "$rt/.mode"
+}
+
 # The main checkouts at $BASE_DOMAIN, the way `valet link` served them: the main
 # backend, plus each app whose main .env names a PORT.
 runtime_write_main_site() {
@@ -232,15 +282,17 @@ runtime_write_main_site() {
   done
   # shellcheck disable=SC2034  # render_nginx_block reads WT_BACKEND (dynamic scope)
   ( WT_BACKEND="$BACKEND_REPO"; render_nginx_block "$BASE_DOMAIN" "$locations" ) > "$conf"
+  if runtime_uses_portless; then portless_route_add "$BASE_DOMAIN" || true; fi
 }
 
 runtime_up() {
   require_command docker
-  [[ -f "$WS_CERT" && -f "$WS_CERT_KEY" ]] || {
+  if ! runtime_uses_portless && [[ ! -f "$WS_CERT" || ! -f "$WS_CERT_KEY" ]]; then
     err "No certificate for $BASE_DOMAIN at $WS_CERT. Run 'ws runtime setup' once."
     return 1
-  }
+  fi
   runtime_write_files || return 1
+  runtime_set_aside_stale_sites
   runtime_write_main_site
   spin "starting the docker runtime"
   if ! run_quiet runtime_compose up -d --remove-orphans; then
@@ -249,8 +301,13 @@ runtime_up() {
   local deadline=$(( $(date +%s) + 30 )) restarts svc
   while (( $(date +%s) < deadline )); do
     if nc -z -w 1 127.0.0.1 "$WS_PHP_PORT" 2>/dev/null \
-       && runtime_answers http "$WS_HTTP_PORT" && runtime_answers https "$WS_HTTPS_PORT"; then
-      spin_ok "docker runtime up (nginx on $(nginx_listen_https), php-fpm on 127.0.0.1:$WS_PHP_PORT)"
+       && runtime_answers http "$WS_HTTP_PORT" \
+       && { runtime_uses_portless || runtime_answers https "$WS_HTTPS_PORT"; }; then
+      if runtime_uses_portless; then
+        spin_ok "docker runtime up (nginx on 127.0.0.1:$WS_HTTP_PORT behind portless, php-fpm on 127.0.0.1:$WS_PHP_PORT)"
+      else
+        spin_ok "docker runtime up (nginx on $(nginx_listen_https), php-fpm on 127.0.0.1:$WS_PHP_PORT)"
+      fi
       return 0
     fi
     # A container that keeps exiting won't come up by waiting: say why now.
@@ -260,7 +317,9 @@ runtime_up() {
         spin_stop
         err "The runtime's $svc container keeps exiting:"
         docker logs --tail 20 "ws-runtime-$svc" 2>&1 | grep -iE 'emerg|error|fatal|address' | tail -3 >&2
-        [[ "$svc" == edge ]] && err "If a port is in use, free it or set WS_HTTP_PORT/WS_HTTPS_PORT in config.sh."
+        if [[ "$svc" == edge ]] && docker logs --tail 20 ws-runtime-edge 2>&1 | grep -q 'Address in use'; then
+          err "A port is in use: free it, or set WS_HTTP_PORT/WS_HTTPS_PORT in config.sh."
+        fi
         return 1
       fi
     done
@@ -269,6 +328,7 @@ runtime_up() {
   spin_stop
   local scheme port
   for scheme in http https; do
+    [[ "$scheme" == https ]] && runtime_uses_portless && continue
     port="$WS_HTTP_PORT"; [[ "$scheme" == https ]] && port="$WS_HTTPS_PORT"
     runtime_answers "$scheme" "$port" \
       || err "127.0.0.1:$port doesn't reach the runtime's nginx — something else answers there. Free it, or set WS_HTTP_PORT/WS_HTTPS_PORT."

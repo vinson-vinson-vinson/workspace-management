@@ -14,6 +14,10 @@ when a release is tagged.
   containers on the host network, in place of Valet. Same routes, same `.env` handling, no sudo
   for reloads, PHP as production runs it. Valet stays the default; nothing changes without the
   setting.
+- portless as the docker runtime's front door (`WS_PROXY="portless"`, the default): `ws serve`
+  registers `<sub>.<BASE_DOMAIN>` with portless (HTTPS with its own CA, `/etc/hosts` in sync),
+  `ws remove` drops it, and the runtime's nginx listens on plain HTTP only. `WS_PROXY="nginx"`
+  serves HTTPS from the runtime's nginx instead.
 - `ws runtime up|down|restart|status|logs|setup|pull` for the docker runtime. `up` checks that
   both ports are answered by the runtime's own nginx and stops with nginx's error when a port is
   taken.

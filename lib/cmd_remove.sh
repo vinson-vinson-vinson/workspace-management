@@ -48,6 +48,8 @@ revert_serve_setup() {
   fi
   host="${sub}.${BASE_DOMAIN}"
   conf="$NGINX_SITES_DIR/$host"
+  # Behind portless the name is registered there too; drop it whatever nginx says.
+  if runtime_uses_portless && ! "$DRY_RUN"; then portless_route_remove "$host"; fi
 
   if [[ ! -f "$conf" ]]; then
     vlog "No nginx block for $host. Nothing to revert."

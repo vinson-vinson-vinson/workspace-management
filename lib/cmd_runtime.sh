@@ -19,8 +19,9 @@ Usage:
 Manages the docker runtime (RUNTIME=docker in config.sh): nginx and the
 backend's php-fpm image, as containers on the host network.
 
-  setup      one-time: a certificate for BASE_DOMAIN and *.BASE_DOMAIN, a DNS
-             check, a port check, and the image pull
+  setup      one-time: checks portless (WS_PROXY=portless, the default) or makes
+             a certificate and checks DNS (WS_PROXY=nginx); checks ports and
+             pulls the images
   up         write the runtime config from config.sh and start it (default)
   down       stop and remove the containers (worktrees and routing stay)
   restart    down, then up
@@ -77,7 +78,7 @@ _runtime_setup_cert() {
 }
 
 _runtime_check_dns() {
-  local probe="ws-dns-check.$BASE_DOMAIN" addr tld="${BASE_DOMAIN##*.}"
+  local probe="ws-dns-check.$BASE_DOMAIN" addr
   addr="$(python3 -c 'import socket,sys
 try: print(socket.getaddrinfo(sys.argv[1], 443)[0][4][0])
 except Exception: pass' "$probe" 2>/dev/null)"
@@ -88,15 +89,32 @@ except Exception: pass' "$probe" 2>/dev/null)"
   esac
   warn "DNS: *.$BASE_DOMAIN doesn't resolve to 127.0.0.1. Valet sets this up; without Valet, once:"
   printf '  brew install dnsmasq\n' >&2
-  printf '  echo "address=/.%s/127.0.0.1" >> "$(brew --prefix)/etc/dnsmasq.conf"\n' "$tld" >&2
+  # The whole BASE_DOMAIN, never just its TLD: for anny.dev that would send every
+  # .dev site on the internet to this machine.
+  printf '  echo "address=/%s/127.0.0.1" >> "$(brew --prefix)/etc/dnsmasq.conf"\n' "$BASE_DOMAIN" >&2
   printf '  sudo brew services start dnsmasq\n' >&2
-  printf '  sudo mkdir -p /etc/resolver && echo "nameserver 127.0.0.1" | sudo tee /etc/resolver/%s\n' "$tld" >&2
+  printf '  sudo mkdir -p /etc/resolver && echo "nameserver 127.0.0.1" | sudo tee /etc/resolver/%s\n' "$BASE_DOMAIN" >&2
   return 0
+}
+
+# portless is installed and routes names under BASE_DOMAIN as they are.
+_runtime_check_portless() {
+  command -v "$PORTLESS_BIN" >/dev/null 2>&1 || {
+    err "portless not found ($PORTLESS_BIN). Install it once: npm install -g portless"
+    printf '  (or point PORTLESS_BIN at an existing copy, e.g. a project node_modules/.bin/portless)\n' >&2
+    return 1
+  }
+  local probe="ws-setup-check.$BASE_DOMAIN"
+  portless_route_add "$probe" || return 1
+  portless_route_remove "$probe"
+  ok "portless: serves https://*.$BASE_DOMAIN (its CA, /etc/hosts kept in sync)"
 }
 
 _runtime_check_ports() {
   local port owner bad=false
-  for port in "$WS_HTTP_PORT" "$WS_HTTPS_PORT" "$WS_PHP_PORT"; do
+  local -a ports=("$WS_HTTP_PORT" "$WS_PHP_PORT")
+  runtime_uses_portless || ports+=("$WS_HTTPS_PORT")
+  for port in "${ports[@]}"; do
     owner="$(_port_owner "$port")"
     if [[ -z "$owner" ]] || runtime_running; then
       continue
@@ -108,7 +126,7 @@ _runtime_check_ports() {
     printf '  If that is Valet: valet stop. Or move the runtime: WS_HTTP_PORT / WS_HTTPS_PORT / WS_PHP_PORT in config.sh.\n' >&2
     return 1
   fi
-  ok "ports: $WS_HTTP_PORT, $WS_HTTPS_PORT and $WS_PHP_PORT are free"
+  ok "ports: ${ports[*]} are free"
 }
 
 _runtime_pull() {
@@ -127,14 +145,16 @@ _runtime_pull() {
 }
 
 _runtime_status() {
-  printf '%sruntime%s  %s  %s(%s)%s\n' "$C_BOLD" "$C_RESET" "$RUNTIME" "$C_DIM" "$WS_RUNTIME_DIR" "$C_RESET"
+  printf '%sruntime%s  %s, HTTPS by %s  %s(%s)%s\n' "$C_BOLD" "$C_RESET" "$RUNTIME" "$WS_PROXY" "$C_DIM" "$WS_RUNTIME_DIR" "$C_RESET"
   if [[ ! -f "$WS_RUNTIME_DIR/compose.yml" ]]; then
     printf '  not set up yet: ws runtime setup\n'
     return 0
   fi
   runtime_compose ps --format '  {{.Service}}\t{{.State}}\t{{.Status}}' 2>/dev/null || true
   local port owner
-  for port in "$WS_HTTPS_PORT" "$WS_PHP_PORT"; do
+  local -a ports=("$WS_HTTP_PORT" "$WS_PHP_PORT")
+  runtime_uses_portless || ports=("$WS_HTTPS_PORT" "$WS_PHP_PORT")
+  for port in "${ports[@]}"; do
     owner="$(_port_owner "$port")"
     printf '  port %-6s %s\n' "$port" "${owner:-free}"
   done
@@ -167,14 +187,21 @@ cmd_runtime() {
 
   case "$action" in
     setup)
-      _runtime_setup_cert "$self_signed" || exit 1
-      _runtime_check_dns
+      if runtime_uses_portless; then
+        _runtime_check_portless || exit 1
+      else
+        _runtime_setup_cert "$self_signed" || exit 1
+        _runtime_check_dns
+      fi
       _runtime_check_ports || true
       _runtime_pull || exit 1
       runtime_up || exit 1
       ;;
     up)      runtime_up || exit 1 ;;
-    down)    run_quiet runtime_compose down --remove-orphans && ok "docker runtime stopped" ;;
+    down)
+      run_quiet runtime_compose down --remove-orphans && ok "docker runtime stopped"
+      runtime_uses_portless && portless_route_remove "$BASE_DOMAIN"
+      ;;
     restart) run_quiet runtime_compose down --remove-orphans; runtime_up || exit 1 ;;
     pull)    _runtime_pull || exit 1 ;;
     logs)    runtime_compose logs -f --tail 100 ${service:+"$service"} ;;

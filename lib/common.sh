@@ -441,7 +441,14 @@ load_config() {
   WS_PHP_IMAGE="${WS_PHP_IMAGE:-}"
   WS_EDGE_IMAGE="${WS_EDGE_IMAGE:-nginx:1.27-alpine}"
   WS_PHP_PORT="${WS_PHP_PORT:-9074}"
-  WS_HTTP_PORT="${WS_HTTP_PORT:-80}"
+  # Who terminates HTTPS for the docker runtime: portless (default; it keeps
+  # /etc/hosts in sync and serves HTTPS with its own trusted CA)
+  # or the runtime's nginx itself (then it needs a cert, DNS and ports 80/443).
+  WS_PROXY="${WS_PROXY:-portless}"
+  case "$WS_PROXY" in portless|nginx) ;; *) err "WS_PROXY must be portless or nginx (got: $WS_PROXY)"; exit 1 ;; esac
+  PORTLESS_BIN="${PORTLESS_BIN:-portless}"
+  if [[ "$WS_PROXY" == "portless" ]]; then WS_HTTP_PORT="${WS_HTTP_PORT:-18080}"
+  else WS_HTTP_PORT="${WS_HTTP_PORT:-80}"; fi
   WS_HTTPS_PORT="${WS_HTTPS_PORT:-443}"
   # The docker runtime reuses Valet's wildcard cert when there is one, else
   # the one `ws runtime setup` creates.

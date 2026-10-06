@@ -244,6 +244,7 @@ they come from:
 | | `valet` (default) | `docker` |
 |---|---|---|
 | nginx + php-fpm | Laravel Valet, installed on the Mac | two containers on the host network: nginx, and your backend's own **production php-fpm image** (`WS_PHP_IMAGE`) with dev settings (opcache revalidates, workers start on demand) |
+| HTTPS and names | Valet's cert and dnsmasq | **portless** (default): `ws serve` registers `<sub>.anny.dev` with it; portless serves it with its own trusted CA and keeps `/etc/hosts` in sync. Or the runtime's nginx itself (`WS_PROXY="nginx"`: a mkcert cert, DNS, ports 80/443) |
 | PHP version | whatever Homebrew has | the version and build production runs |
 | Reloading nginx | `sudo` (or `ws trust`) | no sudo |
 | `ws test`, the queue tab | host `php`, host `mysql` client | inside the php container; no host PHP or mysql client needed |
@@ -253,18 +254,23 @@ MySQL, Redis and the other services are whatever the main `.env` points at, and 
 `ws serve` writes per workspace has the same routes. On the host network, `127.0.0.1` in a
 container is the Mac's `127.0.0.1`, so the copied `.env` files work unchanged.
 
+Behind portless the runtime's nginx listens on plain HTTP (`127.0.0.1:18080`) and portless
+forwards each registered host to it with
+`X-Forwarded-Proto: https`; Laravel is told it runs on HTTPS. `ws remove` drops the name again.
+
 **Switching to docker, once:**
 
 1. Docker with host networking on macOS: [OrbStack](https://orbstack.dev) (recommended), or
    Docker Desktop with host networking turned on.
 2. `WS_PHP_IMAGE` in `config.sh`: the php-fpm image your backend runs in production (`ws` has
    no default for it). If its registry is private, `docker login <registry>` once.
-3. `brew install mkcert && mkcert -install` (a trusted wildcard cert for `BASE_DOMAIN`). If you
-   already secured the domain in Valet, its cert is reused.
-4. In `config.sh`: `RUNTIME="docker"`. Then free ports 80/443 (`valet stop`) and run
-   `ws runtime setup`. It makes the cert, checks DNS and ports, pulls the images and starts the
-   runtime. `*.BASE_DOMAIN` has to resolve to `127.0.0.1`: Valet's dnsmasq already does that, and
-   `ws runtime setup` prints the dnsmasq commands if it doesn't.
+3. portless (`npm install -g portless`), with your domain in its TLD list. For `anny.dev`:
+   `portless proxy stop && portless proxy start --tld localhost --tld anny.dev` (remembered;
+   `.localhost` names keep working). `.dev` is HSTS-preloaded, so it only works over HTTPS, which
+   portless provides.
+4. In `config.sh`: `RUNTIME="docker"` and `BASE_DOMAIN="anny.dev"`, then `ws runtime setup`. It
+   checks portless and the ports, pulls the images and starts the runtime. Valet can stay
+   installed; stop it if you like (`valet stop`).
 
 **Commands:**
 
@@ -276,19 +282,21 @@ ws artisan migrate       # php artisan in the container, in the checkout you're 
 ws php vendor/bin/phpunit --filter=Foo
 ```
 
-The main checkouts are served at `https://BASE_DOMAIN`, like `valet link` did. The queue tab
-defaults to `ws artisan horizon`, which runs Horizon in the container.
+The main checkouts are served at `https://anny.dev`, like `valet link` did. The queue tab
+defaults to `ws artisan horizon`, which runs Horizon in the container. After changing the proxy,
+the domain or the ports, `ws runtime up` sets the old site blocks aside; re-serve each workspace
+once.
 
 **Footprint:** about 250 MB for the whole runtime, however many workspaces it serves: nginx
 takes about 10 MB, and the php container about 240 MB idle, mostly opcache's shared memory, which
 every workspace shares. Workers start per request and stop after 60 s idle, so an idle workspace
 adds nothing. The Nuxt dev servers run on the Mac as before.
 
-**Settings:** `WS_PHP_IMAGE` is required (step 2 above); the rest are optional: `WS_HTTP_PORT` / `WS_HTTPS_PORT`
-(default 80/443), `WS_PHP_PORT` (default 9074), `WS_CERT` / `WS_CERT_KEY`, `WS_RUNTIME_DIR`
-(generated compose file, nginx config, certs and site blocks; default
-`~/.config/workspace-management/runtime`). Other ports than 443 are for trying the runtime next
-to a running Valet: the URLs `ws` prints carry the port, but the `.env` files it copies don't.
+**Settings:** `WS_PHP_IMAGE` is required (step 2 above); the rest are optional: `WS_PROXY` (`portless` or `nginx`), `PORTLESS_BIN` (default
+`portless` on your PATH), `WS_HTTP_PORT` (default 18080
+behind portless, 80 otherwise), `WS_HTTPS_PORT` (nginx only, default 443), `WS_PHP_PORT`
+(default 9074), `WS_CERT` / `WS_CERT_KEY` (nginx only), `WS_RUNTIME_DIR` (generated compose file,
+nginx config and site blocks; default `~/.config/workspace-management/runtime`).
 
 ## Hooks
 

@@ -412,7 +412,7 @@ emit_frontend_location() {
 "        proxy_set_header Host \$host;" \
 "        proxy_set_header X-Real-IP \$remote_addr;" \
 "        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;" \
-"        proxy_set_header X-Forwarded-Proto \$scheme;" \
+"        proxy_set_header X-Forwarded-Proto $(nginx_forwarded_proto);" \
 "        proxy_set_header Upgrade \$http_upgrade;" \
 "        proxy_set_header Connection \"upgrade\";" \
 "    }"
@@ -420,6 +420,7 @@ emit_frontend_location() {
 
 render_nginx_block() {
   local host="$1" locations="$2"
+  if runtime_uses_portless; then render_nginx_block_behind_portless "$host" "$locations"; return; fi
   cat <<EOF
 # Managed by \`ws serve\` — task workspace ${host}
 # Frontend paths proxy to the worktree Nuxt dev servers; everything else is the
@@ -458,6 +459,51 @@ ${locations}
         fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
         fastcgi_param PATH_INFO \$fastcgi_path_info;
         fastcgi_param HTTPS on;
+    }
+
+    location ~ /\.ht { deny all; }
+
+    access_log off;
+    error_log "$(nginx_error_log)";
+}
+EOF
+}
+
+# Docker runtime behind portless: portless terminates HTTPS on 443 (its own
+# trusted CA, /etc/hosts kept in sync) and forwards the host here, so nginx only
+# listens on plain HTTP. Laravel is still told it runs on HTTPS.
+render_nginx_block_behind_portless() {
+  local host="$1" locations="$2"
+  cat <<EOF
+# Managed by \`ws serve\` — task workspace ${host}
+# portless serves https://${host} and forwards it here. Frontend paths proxy to
+# the worktree Nuxt dev servers; everything else is the worktree Laravel backend
+# ($(nginx_backend_note), sharing the main DB).
+server {
+    listen $(nginx_listen_http);
+    server_name ${host};
+    charset utf-8;
+    client_max_body_size 512M;
+
+    # --- worktree frontend (Nuxt dev servers) ---
+${locations}
+    # --- worktree backend (Laravel, shares the main DB) ---
+    root "${WT_BACKEND}/public";
+    index index.php;
+
+    location / {
+        try_files \$uri \$uri/ /index.php?\$query_string;
+    }
+
+    location ~ [^/]\.php(/|\$) {
+        fastcgi_split_path_info ^(.+?\.php)(/.*)\$;
+        fastcgi_pass "$(nginx_fastcgi_pass)";
+        fastcgi_index index.php;
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        fastcgi_param PATH_INFO \$fastcgi_path_info;
+        fastcgi_param HTTPS on;
+        fastcgi_param SERVER_PORT 443;
     }
 
     location ~ /\.ht { deny all; }
@@ -784,7 +830,7 @@ cmd_serve() {
   require_command cksum
   require_command yarn
 
-  if [[ ! -f "$(host_cert)" || ! -f "$(host_cert_key)" ]]; then
+  if ! runtime_uses_portless && [[ ! -f "$(host_cert)" || ! -f "$(host_cert_key)" ]]; then
     if runtime_is_docker; then err "Wildcard cert not found ($(host_cert)). Run 'ws runtime setup' once."
     else err "Wildcard cert not found ($VALET_CERT). Is $BASE_DOMAIN secured in Valet?"; fi
     exit 1
@@ -870,6 +916,10 @@ cmd_serve() {
   #    ensure_nginx emits its own two checks; which ones depend on whether the
   #    routing actually changed.
   ensure_nginx "$host" "${served_apps[@]}"
+  if runtime_uses_portless && ! "$DRY_RUN"; then
+    portless_route_add "$host" || exit 1
+    ok "portless route https://$host"
+  fi
 
   # 3) dependencies (last — only after routing/env succeeded; guarded/idempotent)
   setup_dependencies "${served_apps[@]}"

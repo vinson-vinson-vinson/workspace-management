@@ -245,8 +245,14 @@ RUNTIME="valet"
 # Docker only, required: the php-fpm image your backend runs in production.
 # WS_PHP_IMAGE="<registry>/<backend>/php-fpm:<tag>"
 # Everything below is optional.
-# WS_HTTP_PORT=80
-# WS_HTTPS_PORT=443
+# Docker only: who serves HTTPS. "portless" (default) registers each workspace
+# host with portless, which needs BASE_DOMAIN in its TLD list:
+#   portless proxy stop && portless proxy start --tld localhost --tld anny.dev
+# "nginx" makes the runtime's nginx serve HTTPS itself (cert, DNS, ports 80/443).
+# WS_PROXY="portless"
+# PORTLESS_BIN="portless"
+# WS_HTTP_PORT=18080   # 80 with WS_PROXY="nginx"
+# WS_HTTPS_PORT=443    # WS_PROXY="nginx" only
 # WS_PHP_PORT=9074
 # Reused from Valet when $VALET_CERT exists, else created by `ws runtime setup`.
 # WS_CERT="$HOME/.config/workspace-management/runtime/certs/anny.test.crt"

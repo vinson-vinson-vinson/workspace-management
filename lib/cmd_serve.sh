@@ -570,6 +570,24 @@ ensure_nginx() {
 }
 
 # ------------------------------ dependencies --------------------------------
+# Valet's php-fpm uses Homebrew's opcache defaults (128 MB, 10000 files): about
+# one checkout's compiled code. Every further workspace in use makes PHP compile
+# most requests from scratch. Measured on the docker runtime with 16 workspaces:
+# 256 MB -> 30 s for 400 requests, 2 GB -> 4 s. Say so once per serve, with the fix.
+check_valet_opcache() {
+  runtime_is_docker && return 0
+  command -v php >/dev/null 2>&1 || return 0
+  local mem files confd
+  mem="$(php -r 'echo (int) ini_get("opcache.memory_consumption");' 2>/dev/null || true)"
+  files="$(php -r 'echo (int) ini_get("opcache.max_accelerated_files");' 2>/dev/null || true)"
+  [[ -n "$mem" && -n "$files" ]] || return 0
+  (( mem >= 1024 && files >= 50000 )) && return 0
+  confd="$(php --ini 2>/dev/null | sed -n 's/^Scan for additional .ini files in: *//p')"
+  warn "PHP's opcache holds ${mem} MB / ${files} files: about one workspace's code. With several in use, most requests compile from scratch. Once:"
+  local fix="printf 'opcache.memory_consumption=2048\\nopcache.max_accelerated_files=100000\\nopcache.interned_strings_buffer=64\\n' > ${confd:-<php conf.d>}/zz-ws-opcache.ini && valet restart"
+  printf '  %s\n' "$fix" >&2
+}
+
 setup_dependencies() {
   local -a served=("$@")   # app keys actually being served (for nuxi prepare)
 
@@ -913,6 +931,8 @@ cmd_serve() {
   # 1b) workspace-colored favicons (before nginx, which aliases to them)
   FAVICON_DIR="$session_dir/.favicons"
   prepare_favicons "$(_ws_color "$slug")" "${served_apps[@]}"
+
+  check_valet_opcache
 
   # 2) nginx (idempotent: only rewrites + reloads — and prompts sudo — if changed)
   #    ensure_nginx emits its own two checks; which ones depend on whether the

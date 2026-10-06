@@ -296,6 +296,9 @@ once.
   took 4 s (p50 0.24 s, p95 0.42 s).
 - `WS_PHP_OPCACHE_MB` (default 2048) has to hold every checkout you use: with 256 MB the same
   test took 30 s, because PHP compiled most requests from scratch.
+  The same applies to Valet: Homebrew's PHP caches 128 MB / 10,000 files, about one workspace's
+  code, so `ws serve` warns and prints the one-time fix (an ini file in PHP's `conf.d`, then
+  `valet restart`).
 - The Nuxt dev servers run on the Mac as before and are the real limit: about 2–2.5 GB each.
 
 **Settings:** `WS_PHP_IMAGE` is required (step 2 above); the rest are optional: `WS_PROXY` (`portless` or `nginx`), `PORTLESS_BIN` (default

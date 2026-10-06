@@ -287,13 +287,20 @@ defaults to `ws artisan horizon`, which runs Horizon in the container. After cha
 the domain or the ports, `ws runtime up` sets the old site blocks aside; re-serve each workspace
 once.
 
-**Footprint:** about 250 MB for the whole runtime, however many workspaces it serves: nginx
-takes about 10 MB, and the php container about 240 MB idle, mostly opcache's shared memory, which
-every workspace shares. Workers start per request and stop after 60 s idle, so an idle workspace
-adds nothing. The Nuxt dev servers run on the Mac as before.
+**Footprint and speed** (measured with 16 workspaces served at once, OrbStack, M-series Mac):
+- nginx: about 15 MB. php-fpm: about 65 MB right after start, plus about 90 MB of opcache per
+  checkout once it has served requests (each worktree's files are cached separately), so about
+  1.5 GB with 16 workspaces in use. Workers (about 115 MB each while busy) start per request and
+  stop after 60 s.
+- A warm request takes about 60 ms. 400 requests spread over the 16 workspaces, 32 at a time,
+  took 4 s (p50 0.24 s, p95 0.42 s).
+- `WS_PHP_OPCACHE_MB` (default 2048) has to hold every checkout you use: with 256 MB the same
+  test took 30 s, because PHP compiled most requests from scratch.
+- The Nuxt dev servers run on the Mac as before and are the real limit: about 2–2.5 GB each.
 
 **Settings:** `WS_PHP_IMAGE` is required (step 2 above); the rest are optional: `WS_PROXY` (`portless` or `nginx`), `PORTLESS_BIN` (default
-`portless` on your PATH), `WS_HTTP_PORT` (default 18080
+`portless` on your PATH), `WS_PHP_OPCACHE_MB` (default 2048),
+`WS_PHP_MAX_CHILDREN` (php-fpm workers across all workspaces, default 16), `WS_HTTP_PORT` (default 18080
 behind portless, 80 otherwise), `WS_HTTPS_PORT` (nginx only, default 443), `WS_PHP_PORT`
 (default 9074), `WS_CERT` / `WS_CERT_KEY` (nginx only), `WS_RUNTIME_DIR` (generated compose file,
 nginx config and site blocks; default `~/.config/workspace-management/runtime`).

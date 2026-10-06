@@ -722,7 +722,9 @@ setup_dependencies() {
   local cog_env="$WT_BACKEND/.env"; [[ -f "$cog_env" ]] || cog_env="$BACKEND_REPO/.env"
   local cog_rel=""
   if [[ -f "$cog_env" ]]; then
-    cog_rel="$(grep -E '^IAM_PUBLIC_KEY_PATH=' "$cog_env" | tail -1 | cut -d= -f2-)"
+    # `|| true`: no IAM_PUBLIC_KEY_PATH line is fine (default below), but under
+    # pipefail grep's "no match" would end serve here, silently, with status 1.
+    cog_rel="$(grep -E '^IAM_PUBLIC_KEY_PATH=' "$cog_env" | tail -1 | cut -d= -f2- || true)"
     cog_rel="${cog_rel//\"/}"; cog_rel="${cog_rel//\'/}"; cog_rel="${cog_rel// /}"
   fi
   [[ -n "$cog_rel" ]] || cog_rel="cognitor.key"

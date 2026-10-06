@@ -441,6 +441,13 @@ load_config() {
   WS_PHP_IMAGE="${WS_PHP_IMAGE:-}"
   WS_EDGE_IMAGE="${WS_EDGE_IMAGE:-nginx:1.27-alpine}"
   WS_PHP_PORT="${WS_PHP_PORT:-9074}"
+  # Opcache is shared by every served checkout, and each worktree's files are
+  # cached separately (different paths): about 90 MB per checkout once it has
+  # served requests. 2 GB holds ~20; past that PHP compiles from scratch and a
+  # request takes 5x as long. Only the part in use takes memory.
+  WS_PHP_OPCACHE_MB="${WS_PHP_OPCACHE_MB:-2048}"
+  # php-fpm workers across all workspaces (about 115 MB each while busy).
+  WS_PHP_MAX_CHILDREN="${WS_PHP_MAX_CHILDREN:-16}"
   # Who terminates HTTPS for the docker runtime: portless (default; it keeps
   # /etc/hosts in sync and serves HTTPS with its own trusted CA)
   # or the runtime's nginx itself (then it needs a cert, DNS and ports 80/443).

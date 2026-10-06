@@ -254,6 +254,10 @@ RUNTIME="valet"
 # WS_HTTP_PORT=18080   # 80 with WS_PROXY="nginx"
 # WS_HTTPS_PORT=443    # WS_PROXY="nginx" only
 # WS_PHP_PORT=9074
+# Opcache shared by every served checkout, ~90 MB each once used (2 GB ≈ 20):
+# WS_PHP_OPCACHE_MB=2048
+# php-fpm workers across all workspaces, ~115 MB each while busy:
+# WS_PHP_MAX_CHILDREN=16
 # Reused from Valet when $VALET_CERT exists, else created by `ws runtime setup`.
 # WS_CERT="$HOME/.config/workspace-management/runtime/certs/anny.test.crt"
 # WS_CERT_KEY="$HOME/.config/workspace-management/runtime/certs/anny.test.key"

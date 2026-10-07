@@ -235,6 +235,34 @@ TEST_DB_PASSWORD=""
 # "Allowed memory size exhausted" fatal rather than a test failure.
 TEST_MEMORY_LIMIT="1G"
 
+# ------------------------------ serving runtime ------------------------------
+# Where `ws serve`'s nginx and php-fpm come from: "valet" (Laravel Valet on this
+# Mac, the default) or "docker" (two containers on the host network: nginx and
+# your backend's production php-fpm image). With docker, set WS_PHP_IMAGE and
+# run `ws runtime setup` once; `ws test`, `ws artisan` and the queue tab then run
+# PHP in the container. See the README's "Runtime: Valet or Docker".
+RUNTIME="valet"
+# Docker only, required: the php-fpm image your backend runs in production.
+# WS_PHP_IMAGE="<registry>/<backend>/php-fpm:<tag>"
+# Everything below is optional.
+# Docker only: who serves HTTPS. "portless" (default) registers each workspace
+# host with portless, which needs BASE_DOMAIN in its TLD list:
+#   portless proxy stop && portless proxy start --tld localhost --tld anny.dev
+# "nginx" makes the runtime's nginx serve HTTPS itself (cert, DNS, ports 80/443).
+# WS_PROXY="portless"
+# PORTLESS_BIN="portless"
+# WS_HTTP_PORT=18080   # 80 with WS_PROXY="nginx"
+# WS_HTTPS_PORT=443    # WS_PROXY="nginx" only
+# WS_PHP_PORT=9074
+# Opcache shared by every served checkout, ~90 MB each once used (2 GB ≈ 20):
+# WS_PHP_OPCACHE_MB=2048
+# php-fpm workers across all workspaces, ~115 MB each while busy:
+# WS_PHP_MAX_CHILDREN=16
+# Reused from Valet when $VALET_CERT exists, else created by `ws runtime setup`.
+# WS_CERT="$HOME/.config/workspace-management/runtime/certs/anny.test.crt"
+# WS_CERT_KEY="$HOME/.config/workspace-management/runtime/certs/anny.test.key"
+# WS_RUNTIME_DIR="$HOME/.config/workspace-management/runtime"
+
 # ------------------------------ serving (ws serve) ---------------------------
 # `ws serve` makes a task worktree reachable at <sub>.$BASE_DOMAIN using Laravel
 # Valet's nginx + wildcard cert. If you don't use `ws serve` you can leave this

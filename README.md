@@ -26,8 +26,10 @@ adapts to your own repos, branches, domain, and app layout.
 - **python3** — for `ws sync` (keeps each workspace's Source Control ignore-list
   current); usually already present, and skipped with a warning if not.
 - For `ws serve` only: **Laravel Valet** (nginx + a wildcard cert for
-  your domain), `nginx`, `yarn`, and `sudo` access to reload nginx. If you don't
-  serve workspaces you can ignore that command entirely.
+  your domain), `nginx`, `yarn`, and `sudo` access to reload nginx. Or, with
+  `RUNTIME="docker"`, **Docker** instead of Valet; see
+  [Runtime: Valet or Docker](#runtime-valet-or-docker). If you don't serve
+  workspaces you can ignore that command entirely.
 
 ## Install
 
@@ -233,6 +235,78 @@ client**, once:
 
    The existing URL is kept; the `*.` variant is added alongside it. Repeat for
    each client, using that client's own callback path.
+
+## Runtime: Valet or Docker
+
+`ws serve` needs an nginx and a php-fpm on `127.0.0.1`. `RUNTIME` in `config.sh` picks where
+they come from:
+
+| | `valet` (default) | `docker` |
+|---|---|---|
+| nginx + php-fpm | Laravel Valet, installed on the Mac | two containers on the host network: nginx, and your backend's own **production php-fpm image** (`WS_PHP_IMAGE`) with dev settings (opcache revalidates, workers start on demand) |
+| HTTPS and names | Valet's cert and dnsmasq | **portless** (default): `ws serve` registers `<sub>.anny.dev` with it; portless serves it with its own trusted CA and keeps `/etc/hosts` in sync. Or the runtime's nginx itself (`WS_PROXY="nginx"`: a mkcert cert, DNS, ports 80/443) |
+| PHP version | whatever Homebrew has | the version and build production runs |
+| Reloading nginx | `sudo` (or `ws trust`) | no sudo |
+| `ws test`, the queue tab | host `php`, host `mysql` client | inside the php container; no host PHP or mysql client needed |
+
+Everything else stays the same in both: the Nuxt dev servers run on the Mac (fast file watching),
+MySQL, Redis and the other services are whatever the main `.env` points at, and the nginx block
+`ws serve` writes per workspace has the same routes. On the host network, `127.0.0.1` in a
+container is the Mac's `127.0.0.1`, so the copied `.env` files work unchanged.
+
+Behind portless the runtime's nginx listens on plain HTTP (`127.0.0.1:18080`) and portless
+forwards each registered host to it with
+`X-Forwarded-Proto: https`; Laravel is told it runs on HTTPS. `ws remove` drops the name again.
+
+**Switching to docker, once:**
+
+1. Docker with host networking on macOS: [OrbStack](https://orbstack.dev) (recommended), or
+   Docker Desktop with host networking turned on.
+2. `WS_PHP_IMAGE` in `config.sh`: the php-fpm image your backend runs in production (`ws` has
+   no default for it). If its registry is private, `docker login <registry>` once.
+3. portless (`npm install -g portless`), with your domain in its TLD list. For `anny.dev`:
+   `portless proxy stop && portless proxy start --tld localhost --tld anny.dev` (remembered;
+   `.localhost` names keep working). `.dev` is HSTS-preloaded, so it only works over HTTPS, which
+   portless provides.
+4. In `config.sh`: `RUNTIME="docker"` and `BASE_DOMAIN="anny.dev"`, then `ws runtime setup`. It
+   checks portless and the ports, pulls the images and starts the runtime. Valet can stay
+   installed; stop it if you like (`valet stop`).
+
+**Commands:**
+
+```bash
+ws runtime status        # containers, ports, served sites
+ws runtime logs php      # follow one container (or both without a name)
+ws runtime down          # stop; `ws serve` starts it again when needed
+ws artisan migrate       # php artisan in the container, in the checkout you're in
+ws php vendor/bin/phpunit --filter=Foo
+```
+
+The main checkouts are served at `https://anny.dev`, like `valet link` did. The queue tab
+defaults to `ws artisan horizon`, which runs Horizon in the container. After changing the proxy,
+the domain or the ports, `ws runtime up` sets the old site blocks aside; re-serve each workspace
+once.
+
+**Footprint and speed** (measured with 16 workspaces served at once, OrbStack, M-series Mac):
+- nginx: about 15 MB. php-fpm: about 65 MB right after start, plus about 90 MB of opcache per
+  checkout once it has served requests (each worktree's files are cached separately), so about
+  1.5 GB with 16 workspaces in use. Workers (about 115 MB each while busy) start per request and
+  stop after 60 s.
+- A warm request takes about 60 ms. 400 requests spread over the 16 workspaces, 32 at a time,
+  took 4 s (p50 0.24 s, p95 0.42 s).
+- `WS_PHP_OPCACHE_MB` (default 2048) has to hold every checkout you use: with 256 MB the same
+  test took 30 s, because PHP compiled most requests from scratch.
+  The same applies to Valet: Homebrew's PHP caches 128 MB / 10,000 files, about one workspace's
+  code, so `ws serve` warns and prints the one-time fix (an ini file in PHP's `conf.d`, then
+  `valet restart`).
+- The Nuxt dev servers run on the Mac as before and are the real limit: about 2–2.5 GB each.
+
+**Settings:** `WS_PHP_IMAGE` is required (step 2 above); the rest are optional: `WS_PROXY` (`portless` or `nginx`), `PORTLESS_BIN` (default
+`portless` on your PATH), `WS_PHP_OPCACHE_MB` (default 2048),
+`WS_PHP_MAX_CHILDREN` (php-fpm workers across all workspaces, default 16), `WS_HTTP_PORT` (default 18080
+behind portless, 80 otherwise), `WS_HTTPS_PORT` (nginx only, default 443), `WS_PHP_PORT`
+(default 9074), `WS_CERT` / `WS_CERT_KEY` (nginx only), `WS_RUNTIME_DIR` (generated compose file,
+nginx config and site blocks; default `~/.config/workspace-management/runtime`).
 
 ## Hooks
 

@@ -94,7 +94,7 @@ _ws_admin_url() {
   local slug="$1" sub host
   sub="$(resolve_subdomain "$slug")" || return 0
   host="${sub}.${BASE_DOMAIN}"
-  [[ -f "$VALET_NGINX_DIR/$host" ]] && printf '%s' "${host}${ADMIN_PATH}"
+  [[ -f "$NGINX_SITES_DIR/$host" ]] && printf '%s' "${host}$(url_port_suffix)${ADMIN_PATH}"
   return 0
 }
 

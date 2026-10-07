@@ -426,6 +426,48 @@ load_config() {
   # memory_limit handed to php for `ws test`. The CLI php.ini default (often
   # 128M) runs out partway through a full suite.
   TEST_MEMORY_LIMIT="${TEST_MEMORY_LIMIT:-1G}"
+  # Serving runtime: valet (default) or docker. See lib/runtime.sh.
+  RUNTIME="${RUNTIME:-valet}"
+  case "$RUNTIME" in valet|docker) ;; *) err "RUNTIME must be valet or docker (got: $RUNTIME)"; exit 1 ;; esac
+  VALET_DIR="${VALET_DIR:-$HOME/.config/valet}"
+  VALET_CERT="${VALET_CERT:-$VALET_DIR/Certificates/$BASE_DOMAIN.crt}"
+  VALET_CERT_KEY="${VALET_CERT_KEY:-$VALET_DIR/Certificates/$BASE_DOMAIN.key}"
+  VALET_PHP_SOCK="${VALET_PHP_SOCK:-$VALET_DIR/valet.sock}"
+  VALET_NGINX_DIR="${VALET_NGINX_DIR:-$VALET_DIR/Nginx}"
+  VALET_LOG="${VALET_LOG:-$VALET_DIR/Log/nginx-error.log}"
+  WS_RUNTIME_DIR="${WS_RUNTIME_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/workspace-management/runtime}"
+  # The backend's production php-fpm image. No default: it's your backend's own
+  # build, so it's set in config.sh; `ws runtime up` stops when it's missing.
+  WS_PHP_IMAGE="${WS_PHP_IMAGE:-}"
+  WS_EDGE_IMAGE="${WS_EDGE_IMAGE:-nginx:1.27-alpine}"
+  WS_PHP_PORT="${WS_PHP_PORT:-9074}"
+  # Opcache is shared by every served checkout, and each worktree's files are
+  # cached separately (different paths): about 90 MB per checkout once it has
+  # served requests. 2 GB holds ~20; past that PHP compiles from scratch and a
+  # request takes 5x as long. Only the part in use takes memory.
+  WS_PHP_OPCACHE_MB="${WS_PHP_OPCACHE_MB:-2048}"
+  # php-fpm workers across all workspaces (about 115 MB each while busy).
+  WS_PHP_MAX_CHILDREN="${WS_PHP_MAX_CHILDREN:-16}"
+  # Who terminates HTTPS for the docker runtime: portless (default; it keeps
+  # /etc/hosts in sync and serves HTTPS with its own trusted CA)
+  # or the runtime's nginx itself (then it needs a cert, DNS and ports 80/443).
+  WS_PROXY="${WS_PROXY:-portless}"
+  case "$WS_PROXY" in portless|nginx) ;; *) err "WS_PROXY must be portless or nginx (got: $WS_PROXY)"; exit 1 ;; esac
+  PORTLESS_BIN="${PORTLESS_BIN:-portless}"
+  if [[ "$WS_PROXY" == "portless" ]]; then WS_HTTP_PORT="${WS_HTTP_PORT:-18080}"
+  else WS_HTTP_PORT="${WS_HTTP_PORT:-80}"; fi
+  WS_HTTPS_PORT="${WS_HTTPS_PORT:-443}"
+  # The docker runtime reuses Valet's wildcard cert when there is one, else
+  # the one `ws runtime setup` creates.
+  if [[ -z "${WS_CERT:-}" ]]; then
+    if [[ -f "$VALET_CERT" ]]; then WS_CERT="$VALET_CERT"; WS_CERT_KEY="${WS_CERT_KEY:-$VALET_CERT_KEY}"
+    else WS_CERT="$WS_RUNTIME_DIR/certs/$BASE_DOMAIN.crt"; fi
+  fi
+  WS_CERT_KEY="${WS_CERT_KEY:-${WS_CERT%.crt}.key}"
+  # Where the per-workspace nginx blocks live.
+  # shellcheck disable=SC2034  # read by serve, list, status, share and remove
+  if [[ "$RUNTIME" == "docker" ]]; then NGINX_SITES_DIR="$WS_RUNTIME_DIR/sites"
+  else NGINX_SITES_DIR="$VALET_NGINX_DIR"; fi
   # Terminal opened for post-create commands (e.g. yarn serve-*, an agent).
   TERMINAL_APP="${TERMINAL_APP:-terminal}"
   # Whether `ws create` auto-opens the session terminals at all. Config or
@@ -438,8 +480,10 @@ load_config() {
   POST_CREATE_TERMINALS=(${POST_CREATE_TERMINALS[@]+"${POST_CREATE_TERMINALS[@]}"})
   # Tabs beyond the served apps: "NAME:frontend|backend:COMMAND".
   SESSION_TABS=(${SESSION_TABS[@]+"${SESSION_TABS[@]}"})
+  local queue_cmd="php artisan horizon"
+  [[ "$RUNTIME" == "docker" ]] && queue_cmd="ws artisan horizon"
   [[ ${#SESSION_TABS[@]} -gt 0 ]] || SESSION_TABS=(
-    "queue:backend:php artisan horizon"
+    "queue:backend:$queue_cmd"
     "agent (api):backend:claude"
     "agent (ui):frontend:claude"
   )
@@ -1255,6 +1299,7 @@ resolve_subdomain() {
 # command rules — so it must be skipped, not attempted. Returns non-zero if
 # the user can't/won't authenticate; callers add their own context.
 ensure_sudo_for_nginx() {
+  runtime_is_docker && return 0   # the docker runtime reloads without sudo
   if [[ -f "$WSM_SUDOERS_FILE" ]]; then
     vlog "ws trust rule present — no sudo prompt needed."
     return 0
@@ -1308,8 +1353,18 @@ _test_db_name_ok() {
   return 0
 }
 
+# A way to run SQL: the host's mysql client, or (docker runtime) the php
+# container, started if need be.
+test_db_client_available() {
+  command -v mysql >/dev/null 2>&1 && return 0
+  runtime_is_docker && runtime_ensure_up >/dev/null 2>&1
+}
+
 # Run one SQL statement with the configured credentials.
 _test_db_sql() {
+  if ! command -v mysql >/dev/null 2>&1 && runtime_is_docker; then
+    runtime_sql "$1"; return $?
+  fi
   local -a args=(-h "$TEST_DB_HOST" -u "$TEST_DB_USER")
   [[ -n "$TEST_DB_PASSWORD" ]] && args+=("-p${TEST_DB_PASSWORD}")
   mysql "${args[@]}" -e "$1" 2>&1
@@ -1337,7 +1392,7 @@ test_db_ensure() {
     printf '[dry-run] mysql: CREATE DATABASE IF NOT EXISTS \`%s\`\n' "$name"
     return 0
   fi
-  command -v mysql >/dev/null 2>&1 \
+  test_db_client_available \
     || { spin_stop; warn "mysql client not found — skipping test DB."; return 1; }
   if out="$(_test_db_sql "CREATE DATABASE IF NOT EXISTS \`$name\`")"; then
     vlog "Test DB ready: $name"
@@ -1368,7 +1423,7 @@ test_db_drop() {
     printf '[dry-run] mysql: DROP DATABASE IF EXISTS \`%s\`\n' "$name"
     return 0
   fi
-  command -v mysql >/dev/null 2>&1 \
+  test_db_client_available \
     || { spin_stop; warn "mysql client not found — test DB '$name' not dropped."; return 1; }
   if out="$(_test_db_sql "DROP DATABASE IF EXISTS \`$name\`")"; then
     vlog "Dropped test DB: $name"
@@ -1384,7 +1439,11 @@ test_db_drop() {
 run_nginx() {
   local out status=0
   # `|| status=$?` keeps `set -e` from aborting so we can print captured output.
-  out="$(sudo nginx "$@" 2>&1)" || status=$?
+  if runtime_is_docker; then
+    out="$(runtime_compose exec -T edge nginx "$@" 2>&1)" || status=$?
+  else
+    out="$(sudo nginx "$@" 2>&1)" || status=$?
+  fi
   if [[ $status -ne 0 ]]; then
     printf '%s\n' "$out" >&2
     return "$status"
@@ -1394,3 +1453,6 @@ run_nginx() {
   fi
   return 0
 }
+
+# shellcheck source=/dev/null
+source "$LIB_DIR/runtime.sh"

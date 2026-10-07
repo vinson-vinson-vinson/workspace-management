@@ -87,7 +87,7 @@ _cognitor_rel_path() {
 _test_db_state() {
   local slug="$1" name out
   "$TEST_DB_ENABLED" || { printf 'disabled'; return 0; }
-  command -v mysql >/dev/null 2>&1 || { printf 'unavailable'; return 0; }
+  test_db_client_available || { printf 'unavailable'; return 0; }
   name="$(resolve_test_db "$slug")" || { printf 'unavailable'; return 0; }
   out="$(_test_db_sql "SHOW DATABASES LIKE '${name}'")"
   case "$out" in
@@ -147,7 +147,7 @@ cmd_status() {
   local sub host served=false
   sub="$(resolve_subdomain "$slug")" || sub="$slug"
   host="${sub}.${BASE_DOMAIN}"
-  [[ -f "$VALET_NGINX_DIR/$host" ]] && served=true
+  [[ -f "$NGINX_SITES_DIR/$host" ]] && served=true
 
   # ── port base ──────────────────────────────────────────────────────────
   PORT_BASE="$(compute_port_base "$sub")"
@@ -216,7 +216,7 @@ cmd_status() {
   # workspace isn't served yet, fall back to what it WOULD serve so "stopped"
   # still means something.
   local -a served_apps=()
-  local conf="$VALET_NGINX_DIR/$host" d
+  local conf="$NGINX_SITES_DIR/$host" d
   for key in "${apps[@]}"; do
     if "$served"; then
       grep -qE "127\.0\.0\.1:$(port_for "$key")([^0-9]|$)" "$conf" 2>/dev/null \
@@ -253,7 +253,7 @@ cmd_status() {
   printf '  %-*s %s\n' "$L" "path" "$session_dir"
   [[ -n "$task_url" ]] && printf '  %-*s %s\n' "$L" "task" "$(_status_link "$task_url")"
   if "$served"; then
-    printf '  %-*s %s\n' "$L" "url" "$(_status_link "https://${host}${ADMIN_PATH}")"
+    printf '  %-*s %s\n' "$L" "url" "$(_status_link "https://${host}$(url_port_suffix)${ADMIN_PATH}")"
   else
     printf '  %-*s %snot served%s\n' "$L" "url" "$C_DIM" "$C_RESET"
   fi
@@ -342,6 +342,7 @@ _server_line() {
 # one workspace's worker from another's.
 _horizon_running() {
   local wt_be="$1" pid wd
+  if runtime_is_docker; then runtime_horizon_running "$wt_be"; return $?; fi
   for pid in $(pgrep -f 'artisan horizon' 2>/dev/null); do
     wd="$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1)"
     case "$wd" in "$wt_be"*) return 0 ;; esac
@@ -365,7 +366,7 @@ _status_json() {
   done
 
   WSJ_SLUG="$slug" WSJ_PATH="$session_dir" WSJ_SERVED="$served" \
-  WSJ_HOST="$host" WSJ_ADMIN="$ADMIN_PATH" WSJ_TASK="$task_url" \
+  WSJ_HOST="$host$(url_port_suffix)" WSJ_ADMIN="$ADMIN_PATH" WSJ_TASK="$task_url" \
   WSJ_FE_BRANCH="$fe_branch" WSJ_FE_GIT="$fe_git" WSJ_NODE="$node_modules_ok" WSJ_FE_MR="$fe_mr" \
   WSJ_BE_BRANCH="$be_branch" WSJ_BE_GIT="$be_git" WSJ_VENDOR="$vendor_ok" WSJ_COG="$cognitor_ok" \
   WSJ_TESTDB="$test_db_state" WSJ_HORIZON="$horizon_state" WSJ_BE_MR="$be_mr" \
@@ -454,7 +455,7 @@ _status_overview() {
     served="no"; up=0; total=0
     if sub="$(resolve_subdomain "$slug" 2>/dev/null)"; then
       host="${sub}.${BASE_DOMAIN}"
-      [[ -f "$VALET_NGINX_DIR/$host" ]] && served="yes"
+      [[ -f "$NGINX_SITES_DIR/$host" ]] && served="yes"
       PORT_BASE="$(compute_port_base "$sub")"
       for key in "${DEFAULT_APPS[@]}"; do
         total=$(( total + 1 ))

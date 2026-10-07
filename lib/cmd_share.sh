@@ -68,7 +68,7 @@ cmd_share() {
   fi
 
   # Must be served — its nginx block has to exist.
-  if [[ ! -f "$VALET_NGINX_DIR/$host" ]]; then
+  if [[ ! -f "$NGINX_SITES_DIR/$host" ]]; then
     err "$label is not served ($host has no nginx block)."
     if [[ "$label" == "main" ]]; then err "Start your main site in Valet first."
     else err "Run 'ws serve $label' first."; fi

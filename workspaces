@@ -49,12 +49,19 @@ case "$subcommand" in
   -V|--version|version)
     printf 'workspaces %s\n' "$WSM_VERSION"
     ;;
-  create|list|mr|open|recolor|serve|share|remove|stats|status|sync|test|trust|raccoon|url)
+  create|list|mr|open|recolor|runtime|serve|share|remove|stats|status|sync|test|trust|raccoon|url)
     LOG_PREFIX="$subcommand"
     load_config
     # shellcheck source=/dev/null
     source "$LIB_DIR/cmd_${subcommand}.sh"
     "cmd_${subcommand}" "$@"
+    ;;
+  php|artisan)
+    LOG_PREFIX="$subcommand"
+    load_config
+    # shellcheck source=/dev/null
+    source "$LIB_DIR/cmd_php.sh"
+    cmd_php "$subcommand" "$@"
     ;;
   *)
     err "Unknown command: $subcommand"

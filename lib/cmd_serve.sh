@@ -412,7 +412,7 @@ emit_frontend_location() {
 "        proxy_set_header Host \$host;" \
 "        proxy_set_header X-Real-IP \$remote_addr;" \
 "        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;" \
-"        proxy_set_header X-Forwarded-Proto \$scheme;" \
+"        proxy_set_header X-Forwarded-Proto $(nginx_forwarded_proto);" \
 "        proxy_set_header Upgrade \$http_upgrade;" \
 "        proxy_set_header Connection \"upgrade\";" \
 "    }"
@@ -420,25 +420,26 @@ emit_frontend_location() {
 
 render_nginx_block() {
   local host="$1" locations="$2"
+  if runtime_uses_portless; then render_nginx_block_behind_portless "$host" "$locations"; return; fi
   cat <<EOF
 # Managed by \`ws serve\` — task workspace ${host}
 # Frontend paths proxy to the worktree Nuxt dev servers; everything else is the
-# worktree Laravel backend (served via valet php-fpm, sharing the main DB).
+# worktree Laravel backend ($(nginx_backend_note), sharing the main DB).
 server {
-    listen 127.0.0.1:80;
+    listen $(nginx_listen_http);
     server_name ${host};
-    return 301 https://\$host\$request_uri;
+    return 301 https://\$host$(url_port_suffix)\$request_uri;
 }
 
 server {
-    listen 127.0.0.1:443 ssl;
+    listen $(nginx_listen_https) ssl;
     http2 on;
     server_name ${host};
     charset utf-8;
     client_max_body_size 512M;
 
-    ssl_certificate "${VALET_CERT}";
-    ssl_certificate_key "${VALET_CERT_KEY}";
+    ssl_certificate "$(nginx_cert)";
+    ssl_certificate_key "$(nginx_cert_key)";
 
     # --- worktree frontend (Nuxt dev servers) ---
 ${locations}
@@ -452,7 +453,7 @@ ${locations}
 
     location ~ [^/]\.php(/|\$) {
         fastcgi_split_path_info ^(.+?\.php)(/.*)\$;
-        fastcgi_pass "unix:${VALET_PHP_SOCK}";
+        fastcgi_pass "$(nginx_fastcgi_pass)";
         fastcgi_index index.php;
         include fastcgi_params;
         fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
@@ -463,7 +464,52 @@ ${locations}
     location ~ /\.ht { deny all; }
 
     access_log off;
-    error_log "${VALET_LOG}";
+    error_log "$(nginx_error_log)";
+}
+EOF
+}
+
+# Docker runtime behind portless: portless terminates HTTPS on 443 (its own
+# trusted CA, /etc/hosts kept in sync) and forwards the host here, so nginx only
+# listens on plain HTTP. Laravel is still told it runs on HTTPS.
+render_nginx_block_behind_portless() {
+  local host="$1" locations="$2"
+  cat <<EOF
+# Managed by \`ws serve\` — task workspace ${host}
+# portless serves https://${host} and forwards it here. Frontend paths proxy to
+# the worktree Nuxt dev servers; everything else is the worktree Laravel backend
+# ($(nginx_backend_note), sharing the main DB).
+server {
+    listen $(nginx_listen_http);
+    server_name ${host};
+    charset utf-8;
+    client_max_body_size 512M;
+
+    # --- worktree frontend (Nuxt dev servers) ---
+${locations}
+    # --- worktree backend (Laravel, shares the main DB) ---
+    root "${WT_BACKEND}/public";
+    index index.php;
+
+    location / {
+        try_files \$uri \$uri/ /index.php?\$query_string;
+    }
+
+    location ~ [^/]\.php(/|\$) {
+        fastcgi_split_path_info ^(.+?\.php)(/.*)\$;
+        fastcgi_pass "$(nginx_fastcgi_pass)";
+        fastcgi_index index.php;
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        fastcgi_param PATH_INFO \$fastcgi_path_info;
+        fastcgi_param HTTPS on;
+        fastcgi_param SERVER_PORT 443;
+    }
+
+    location ~ /\.ht { deny all; }
+
+    access_log off;
+    error_log "$(nginx_error_log)";
 }
 EOF
 }
@@ -473,7 +519,7 @@ EOF
 ensure_nginx() {
   local host="$1"; shift
   local -a apps=("$@")
-  local conf="$VALET_NGINX_DIR/$host"
+  local conf="$NGINX_SITES_DIR/$host"
 
   local locations="" app route port
   for app in "${apps[@]}"; do
@@ -507,6 +553,9 @@ ensure_nginx() {
   ensure_sudo_for_nginx \
     || { err "sudo is required to reload nginx. Routing left unchanged — re-run 'ws serve'."; exit 1; }
 
+  # The docker runtime's nginx has to be running to take the reload.
+  runtime_ensure_up || { err "The docker runtime isn't running. Routing left unchanged — see 'ws runtime status'."; exit 1; }
+  mkdir -p "$NGINX_SITES_DIR"
   printf '%s\n' "$expected" >"$conf"
   vlog "Wrote nginx block: $conf"
   ok "nginx setup successfully"
@@ -521,6 +570,24 @@ ensure_nginx() {
 }
 
 # ------------------------------ dependencies --------------------------------
+# Valet's php-fpm uses Homebrew's opcache defaults (128 MB, 10000 files): about
+# one checkout's compiled code. Every further workspace in use makes PHP compile
+# most requests from scratch. Measured on the docker runtime with 16 workspaces:
+# 256 MB -> 30 s for 400 requests, 2 GB -> 4 s. Say so once per serve, with the fix.
+check_valet_opcache() {
+  runtime_is_docker && return 0
+  command -v php >/dev/null 2>&1 || return 0
+  local mem files confd
+  mem="$(php -r 'echo (int) ini_get("opcache.memory_consumption");' 2>/dev/null || true)"
+  files="$(php -r 'echo (int) ini_get("opcache.max_accelerated_files");' 2>/dev/null || true)"
+  [[ -n "$mem" && -n "$files" ]] || return 0
+  (( mem >= 1024 && files >= 50000 )) && return 0
+  confd="$(php --ini 2>/dev/null | sed -n 's/^Scan for additional .ini files in: *//p')"
+  warn "PHP's opcache holds ${mem} MB / ${files} files: about one workspace's code. With several in use, most requests compile from scratch. Once:"
+  local fix="printf 'opcache.memory_consumption=2048\\nopcache.max_accelerated_files=100000\\nopcache.interned_strings_buffer=64\\n' > ${confd:-<php conf.d>}/zz-ws-opcache.ini && valet restart"
+  printf '  %s\n' "$fix" >&2
+}
+
 setup_dependencies() {
   local -a served=("$@")   # app keys actually being served (for nuxi prepare)
 
@@ -673,7 +740,9 @@ setup_dependencies() {
   local cog_env="$WT_BACKEND/.env"; [[ -f "$cog_env" ]] || cog_env="$BACKEND_REPO/.env"
   local cog_rel=""
   if [[ -f "$cog_env" ]]; then
-    cog_rel="$(grep -E '^IAM_PUBLIC_KEY_PATH=' "$cog_env" | tail -1 | cut -d= -f2-)"
+    # `|| true`: no IAM_PUBLIC_KEY_PATH line is fine (default below), but under
+    # pipefail grep's "no match" would end serve here, silently, with status 1.
+    cog_rel="$(grep -E '^IAM_PUBLIC_KEY_PATH=' "$cog_env" | tail -1 | cut -d= -f2- || true)"
     cog_rel="${cog_rel//\"/}"; cog_rel="${cog_rel//\'/}"; cog_rel="${cog_rel// /}"
   fi
   [[ -n "$cog_rel" ]] || cog_rel="cognitor.key"
@@ -747,7 +816,7 @@ setup_dependencies() {
              "$WT_BACKEND/storage/logs" \
              "$WT_BACKEND/bootstrap/cache"
     chmod -R ug+w "$WT_BACKEND/storage" "$WT_BACKEND/bootstrap/cache" 2>/dev/null || true
-    ( cd "$WT_BACKEND" && php artisan config:clear >/dev/null 2>&1 || true )
+    ws_php_in "$WT_BACKEND" artisan config:clear >/dev/null 2>&1 || true
   fi
 }
 
@@ -777,12 +846,15 @@ cmd_serve() {
 
   require_command git
   require_command sed
-  require_command nginx
+  if runtime_is_docker; then require_command docker; else require_command nginx; fi
   require_command cksum
   require_command yarn
 
-  [[ -f "$VALET_CERT" && -f "$VALET_CERT_KEY" ]] \
-    || { err "Wildcard cert not found ($VALET_CERT). Is $BASE_DOMAIN secured in Valet?"; exit 1; }
+  if ! runtime_uses_portless && [[ ! -f "$(host_cert)" || ! -f "$(host_cert_key)" ]]; then
+    if runtime_is_docker; then err "Wildcard cert not found ($(host_cert)). Run 'ws runtime setup' once."
+    else err "Wildcard cert not found ($VALET_CERT). Is $BASE_DOMAIN secured in Valet?"; fi
+    exit 1
+  fi
 
   if [[ -z "$slug" ]]; then
     slug="$(slug_from_cwd)" || {
@@ -860,10 +932,16 @@ cmd_serve() {
   FAVICON_DIR="$session_dir/.favicons"
   prepare_favicons "$(_ws_color "$slug")" "${served_apps[@]}"
 
+  check_valet_opcache
+
   # 2) nginx (idempotent: only rewrites + reloads — and prompts sudo — if changed)
   #    ensure_nginx emits its own two checks; which ones depend on whether the
   #    routing actually changed.
   ensure_nginx "$host" "${served_apps[@]}"
+  if runtime_uses_portless && ! "$DRY_RUN"; then
+    portless_route_add "$host" || exit 1
+    ok "portless route https://$host"
+  fi
 
   # 3) dependencies (last — only after routing/env succeeded; guarded/idempotent)
   setup_dependencies "${served_apps[@]}"
@@ -915,7 +993,7 @@ _ws_landing_box() {
     path="$(app_route "$app")"
   fi
 
-  local url="https://${host}${path}"
+  local url; url="https://${host}$(url_port_suffix)${path}"
   local inner="  ${label}   ${url}  "
   local w=${#inner}
   local rule; rule="$(ws_rule '─' "$w")"

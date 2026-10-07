@@ -993,7 +993,7 @@ _ws_landing_box() {
     path="$(app_route "$app")"
   fi
 
-  local url="https://${host}$(url_port_suffix)${path}"
+  local url; url="https://${host}$(url_port_suffix)${path}"
   local inner="  ${label}   ${url}  "
   local w=${#inner}
   local rule; rule="$(ws_rule '─' "$w")"

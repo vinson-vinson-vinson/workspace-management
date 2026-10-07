@@ -465,6 +465,7 @@ load_config() {
   fi
   WS_CERT_KEY="${WS_CERT_KEY:-${WS_CERT%.crt}.key}"
   # Where the per-workspace nginx blocks live.
+  # shellcheck disable=SC2034  # read by serve, list, status, share and remove
   if [[ "$RUNTIME" == "docker" ]]; then NGINX_SITES_DIR="$WS_RUNTIME_DIR/sites"
   else NGINX_SITES_DIR="$VALET_NGINX_DIR"; fi
   # Terminal opened for post-create commands (e.g. yarn serve-*, an agent).

@@ -708,7 +708,18 @@ the identity change.
   own `<sub>.anny.dev` subdomain via Laravel Valet/nginx, Cognitor key
   seeding, `install.sh`, and Homebrew tap packaging.
 
-[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.17.0...HEAD
+[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.25.0...HEAD
+[2.25.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.24.0...v2.25.0
+[2.24.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.23.1...v2.24.0
+[2.23.1]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.23.0...v2.23.1
+[2.23.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.22.1...v2.23.0
+[2.22.1]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.22.0...v2.22.1
+[2.22.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.21.1...v2.22.0
+[2.21.1]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.21.0...v2.21.1
+[2.21.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.20.0...v2.21.0
+[2.20.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.19.0...v2.20.0
+[2.19.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.18.0...v2.19.0
+[2.18.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.17.0...v2.18.0
 [2.17.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.16.1...v2.17.0
 [2.16.1]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.16.0...v2.16.1
 [2.16.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.15.0...v2.16.0

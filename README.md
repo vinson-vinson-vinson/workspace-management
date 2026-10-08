@@ -23,8 +23,10 @@ adapts to your own repos, branches, domain, and app layout.
 - **macOS** — required for now; it uses BSD `sed` (`sed -i ''`), `open`, and the `code` CLI.
 - **git** with worktree support.
 - **VS Code** with the `code` command on your `PATH` (for `ws create`).
-- **python3** — for `ws sync` (keeps each workspace's Source Control ignore-list
-  current); usually already present, and skipped with a warning if not.
+- **python3** — for `ws sync`, `ws stats`, `ws envdiff` (and the env report in
+  `ws remove`), `ws mr`, `ws status`, and the tinted favicons of `ws serve`;
+  usually already present. Steps that need it degrade with a warning where they
+  can (sync, favicons); stats and envdiff require it.
 - For `ws serve` only: **Laravel Valet** (nginx + a wildcard cert for
   your domain), `nginx`, `yarn`, and `sudo` access to reload nginx. If you don't
   serve workspaces you can ignore that command entirely.

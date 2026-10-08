@@ -203,6 +203,16 @@ SESSION_TABS=(
   # "scheduler:backend:php artisan schedule:work"
 )
 
+# ------------------------------ env backups ----------------------------------
+# A workspace's .env files start as copies of MAIN's; keys added or changed while
+# working there (a new integration's credentials, say) die with the worktree
+# unless they were ported to MAIN. Before deleting anything, `ws remove`
+# compares bookings-api/.env and every anny-ui/app-*/.env with MAIN's, prints
+# what only the workspace has, and copies the files here — flat, one directory
+# per slug, plus a DIFF.txt of the report. `ws envdiff` shows the same report
+# any time. Optional; the default is shown.
+# ENV_BACKUP_DIR="$HOME/Projects/ws_envs"
+
 # ------------------------------- deep links ----------------------------------
 # `ws url --install` registers a macOS app that owns a URL scheme, so a link in
 # a task or an MR can open its workspace (see the README's "Deep links"). Both

@@ -9,6 +9,22 @@ when a release is tagged.
 
 ## [Unreleased]
 
+### Added
+- `ws envdiff [N|slug]`: what a workspace's `.env` files have that MAIN's
+  don't — keys MAIN lacks, changed values, commented-out lines — comparing
+  `bookings-api/.env` and every `anny-ui/app-*/.env` with its MAIN counterpart.
+  What `ws serve` rewrites (the workspace host in URLs, the pinned
+  HOST/PORT/HMR_PORT/STORAGE_PREFIX) is ignored, so the report only shows what
+  was added by hand. Secret-looking values are masked (`--show-secrets` shows
+  them). `.env.yarn` is out of scope.
+- `ws remove` runs that report after the confirmation and before deleting
+  anything, and backs the compared files up to `ENV_BACKUP_DIR/<slug>/`
+  (default `~/Projects/ws_envs`, a sibling of the planning backup) together
+  with a `DIFF.txt` of the unmasked report. An earlier backup for the slug is
+  moved aside, never overwritten; a failed backup aborts the teardown. Nothing
+  is ever written into MAIN's envs — porting keys over stays a manual step.
+  `--show-secrets` applies here too; `--dry-run` reports and writes nothing.
+
 ## [2.24.0] — 2026-10-05
 
 ### Added

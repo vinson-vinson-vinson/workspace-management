@@ -384,6 +384,9 @@ load_config() {
   # config.sh — it's this machine's history.
   WSM_HISTORY_FILE="${WSM_HISTORY_FILE:-$WSM_HOME/.ws-history.jsonl}"
   MAIN_WORKSPACE_FILE="${MAIN_WORKSPACE_FILE:-}"
+  # Where `ws remove` backs up a workspace's .env files (see lib/envs.sh). A
+  # sibling of the planning backup (~/Projects/ws_docs) by default.
+  ENV_BACKUP_DIR="${ENV_BACKUP_DIR:-$HOME/Projects/ws_envs}"
   # Git remote per repo — the two sides can live on different remotes (a fork
   # of one, upstream for the other), so this is not one global setting. Both
   # default to "origin", which is what every command used to hard-code.

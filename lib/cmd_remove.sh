@@ -6,10 +6,13 @@
 # checkout.
 # -----------------------------------------------------------------------------
 
+# shellcheck source=/dev/null
+source "$LIB_DIR/envs.sh"
+
 cmd_remove_usage() {
   cat <<'USAGE'
 Usage:
-  ws remove [SLUG] [--dry-run] [--force] [-v]
+  ws remove [SLUG] [--dry-run] [--force] [--show-secrets] [-v]
 
 Arguments:
   SLUG        Workspace slug. If omitted, auto-detects from the current directory.
@@ -19,6 +22,9 @@ Options:
   --force       Skip the confirmation prompt AND the unpushed-work safety check.
                 Removes worktrees and deletes local branches even when they have
                 uncommitted changes or unpushed/diverged commits.
+  --show-secrets
+                Print secret-looking env values in full in the env report
+                (masked by default; the backup always holds them in full).
   -v, --verbose Show nginx's own output/warnings (hidden by default on success).
   -h, --help    Show this help.
 
@@ -29,12 +35,45 @@ Safety:
   - Aborts if any worktree has local-only work (unless --force is given).
   - The "Continue? [y/N]" prompt can be disabled for good with
     REQUIRE_CONFIRM_REMOVE=false in config.sh (the checks above still apply).
+  - Before deleting, the workspace's .env files are compared with MAIN's and
+    backed up to ENV_BACKUP_DIR/<slug>/ (default ~/Projects/ws_envs). Keys or
+    values only the workspace has are listed so they can be ported to MAIN —
+    nothing is ever written into MAIN's envs. See `ws envdiff`.
 
 Examples:
   ws remove                                     # auto-detect from cwd
   ws remove CU-86c9vwd5w_generic-remote-open
   ws remove CU-86c9vwd5w_generic-remote-open --force
 USAGE
+}
+
+# Compare the workspace's envs with MAIN's, print the differences, back the
+# files up (see lib/envs.sh). Dry-run reports and writes nothing.
+backup_envs_before_removal() {
+  local slug="$1" session_dir="$2"
+  if ! command -v python3 >/dev/null 2>&1; then
+    warn "python3 not found — env files are backed up without a comparison."
+  fi
+  printf '  %senvs vs MAIN%s  %s(serve'"'"'s host/port rewrites ignored)%s\n' \
+    "$C_BOLD" "$C_RESET" "$C_DIM" "$C_RESET"
+  if command -v python3 >/dev/null 2>&1; then
+    env_report "$slug" "$session_dir" terminal
+  fi
+  if "$DRY_RUN"; then
+    printf '[dry-run] back up env files -> %s/%s/\n' "$ENV_BACKUP_DIR" "$slug"
+    return 0
+  fi
+  spin "backing up env files"
+  if ! env_backup "$slug" "$session_dir"; then
+    spin_stop
+    err "Aborting: could not back up the env files to $ENV_BACKUP_DIR/$slug — nothing was deleted."
+    exit 1
+  fi
+  if (( ENV_DIFF_COUNT == 0 )); then
+    spin_ok "envs match MAIN — backed up anyway ($ENV_BACKUP_FILES file(s) -> $ENV_BACKUP_DEST)"
+  else
+    spin_ok "$ENV_DIFF_COUNT env difference(s) only this workspace had — backed up ($ENV_BACKUP_FILES file(s) -> $ENV_BACKUP_DEST)"
+  fi
 }
 
 # Reverse whatever serve set up: remove the nginx block and reload. The copied
@@ -234,6 +273,7 @@ remove_local_branch() {
 cmd_remove() {
   DRY_RUN=false
   FORCE=false
+  ENV_SHOW_SECRETS=false
   VERBOSE=false
   local slug="" positional=()
 
@@ -241,6 +281,7 @@ cmd_remove() {
     case "$1" in
       --dry-run)    DRY_RUN=true; shift ;;
       --force)      FORCE=true; shift ;;
+      --show-secrets) ENV_SHOW_SECRETS=true; shift ;;
       -v|--verbose) VERBOSE=true; shift ;;
       -h|--help)    cmd_remove_usage; exit 0 ;;
       -*) err "Unknown option: $1"; cmd_remove_usage; exit 1 ;;
@@ -334,6 +375,13 @@ cmd_remove() {
   fi
 
   confirm_removal "$slug"
+
+  # Env safety net: what the workspace's .env files carry that MAIN's don't
+  # (keys added for this task, changed values, commented-out lines) is printed
+  # and the files are backed up — BEFORE anything is deleted. Nothing is ever
+  # written into MAIN's envs; porting keys over stays a deliberate manual step.
+  # A failed backup aborts the teardown, like a failed hook.
+  backup_envs_before_removal "$slug" "$session_dir"
 
   # Custom pre-remove steps run HERE — after confirmation, before anything is
   # deleted, while both worktrees still exist (so a hook can copy files out of

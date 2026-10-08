@@ -9,6 +9,8 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.25.0] — 2026-10-08
+
 ### Added
 - `ws envdiff [N|slug]`: what a workspace's `.env` files have that MAIN's
   don't — keys MAIN lacks, changed values, commented-out lines — comparing
@@ -24,6 +26,9 @@ when a release is tagged.
   moved aside, never overwritten; a failed backup aborts the teardown. Nothing
   is ever written into MAIN's envs — porting keys over stays a manual step.
   `--show-secrets` applies here too; `--dry-run` reports and writes nothing.
+
+### Changed
+- `ws help` lists the commands alphabetically.
 
 ## [2.24.0] — 2026-10-05
 

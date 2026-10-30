@@ -287,14 +287,20 @@ to enable on every machine. `T3_FAVICON_APP` picks another app's icon (default
 `admin`). Run inside T3 (its terminal, or an agent you ask to `ws create`), the
 hook also opens the new project in T3; `T3_OPEN=always|never` overrides that. To add
 workspaces that existed before you enabled the hook, run it once per workspace
-(set `WORKSPACES_ROOT` to the value in your `config.sh`):
+from the workspace-management checkout (set `WORKSPACES_ROOT` to the value in
+your `config.sh`). `T3_OPEN=never` keeps T3 from switching to every project in
+turn when you run it inside T3:
 
 ```bash
 for d in "$WORKSPACES_ROOT"/*/; do d="${d%/}"
-  WS_SLUG="${d##*/}" WS_SESSION_DIR="$d" WS_FRONTEND="$d/anny-ui" \
-    hooks/post-create/t3-project.sh
+  WSM_HOME="$PWD" T3_OPEN=never WS_SLUG="${d##*/}" WS_SESSION_DIR="$d" \
+    WS_FRONTEND="$d/anny-ui" hooks/post-create/t3-project.sh
 done
 ```
+
+T3 reads a project's icon only when the project is added, so the loop refreshes
+the ringed icon on disk but not one T3 already shows. For those, set the icon to
+`<session>/.favicons/admin/favicon.ico` in the project's settings.
 
 ## Per-workspace Chrome (MCP)
 

@@ -276,6 +276,24 @@ window; `pre-remove/backup-planning.sh` then copies that `planning/` to
 `WS_DOCS_DIR`). Both `ws create` and `ws remove` support `--dry-run`, which
 lists the hooks they would run without executing them.
 
+The `t3-project.sh` pair keeps [T3 Code](https://t3.codes) in step:
+`post-create` registers the session dir as a T3 project (so its threads see both
+worktrees) and links the frontend favicon to `<session>/favicon.ico`, which T3
+shows as the project icon; `pre-remove` unregisters it again, keeping the
+project's threads. Both look for the `t3` CLI (`$T3_CLI`, then `t3` on `PATH`,
+then `~/.t3/bin/t3`) and do nothing when T3 Code isn't installed, so they're safe
+to enable on every machine. `T3_FAVICON` overrides the favicon path, relative to
+the frontend worktree (default `app-admin/public/_favicons/favicon.ico`). To add
+workspaces that existed before you enabled the hook, run it once per workspace
+(set `WORKSPACES_ROOT` to the value in your `config.sh`):
+
+```bash
+for d in "$WORKSPACES_ROOT"/*/; do d="${d%/}"
+  WS_SLUG="${d##*/}" WS_SESSION_DIR="$d" WS_FRONTEND="$d/anny-ui" \
+    hooks/post-create/t3-project.sh
+done
+```
+
 ## Per-workspace Chrome (MCP)
 
 Optional. If you drive a browser from Claude via the

@@ -9,6 +9,14 @@ when a release is tagged.
 
 ## [Unreleased]
 
+### Added
+- `hooks.example/{post-create,pre-remove}/t3-project.sh`: register each
+  workspace as a [T3 Code](https://t3.codes) project on `ws create`, with the
+  frontend favicon (`app-admin/public/_favicons/favicon.ico`, override with
+  `T3_FAVICON`) as its icon, and unregister it on `ws remove` (its threads are
+  kept). They detect the `t3` CLI and do nothing when T3 Code isn't installed,
+  so they're safe to enable on every machine.
+
 ## [2.25.0] — 2026-10-08
 
 ### Added

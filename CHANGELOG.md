@@ -14,8 +14,10 @@ when a release is tagged.
   workspace as a [T3 Code](https://t3.codes) project on `ws create`, with the
   admin app's favicon ringed in the workspace color as its icon (another app
   with `T3_FAVICON_APP`), and unregister it on `ws remove` (its threads are
-  kept). They detect the `t3` CLI and do nothing when T3 Code isn't installed,
-  so they're safe to enable on every machine.
+  kept). When `ws create` runs inside T3 Code, the new project also opens in
+  T3 (`T3_OPEN=always|never` to override). They detect the `t3` CLI and do
+  nothing when T3 Code isn't installed, so they're safe to enable on every
+  machine.
 - Hooks get `WSM_HOME` in their environment, to reach the tool's `lib/`.
 
 ### Changed

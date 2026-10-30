@@ -21,6 +21,9 @@
 #   T3_CLI       path to the t3 CLI (default: `t3` on PATH, then ~/.t3/bin/t3)
 #   T3_FAVICON_APP   app key whose favicon is used (default: admin); its icons
 #                    are read from <frontend>/app-<key>/public/_favicons/
+#   T3_OPEN          open the new project in T3 Code: auto (default — only when
+#                    `ws create` runs inside T3, e.g. its terminal or an agent),
+#                    always, or never
 #
 # ws create exports: WS_SLUG, WS_SESSION_DIR, WS_FRONTEND, WS_BACKEND,
 # WS_FRONTEND_DIR_NAME, WS_BACKEND_DIR_NAME, WS_WORKSPACE_FILE, WS_DRY_RUN.
@@ -58,6 +61,13 @@ if [[ "${WS_DRY_RUN:-false}" == true ]]; then
   exit 0
 fi
 
+# Inside T3 Code, its env carries T3CODE_THREAD_ID / T3CODE_CLI_PATH.
+open_in_t3=false
+case "${T3_OPEN:-auto}" in
+  always) open_in_t3=true ;;
+  auto) [[ -n "${T3CODE_THREAD_ID:-}${T3CODE_CLI_PATH:-}" ]] && open_in_t3=true ;;
+esac
+
 icon="$src/favicon.ico"
 if [[ -n "$color" && -f "$ring" ]] && command -v python3 >/dev/null 2>&1 \
    && python3 "$ring" "$color" "$WS_SESSION_DIR/.favicons" "$app:$src"; then
@@ -65,4 +75,5 @@ if [[ -n "$color" && -f "$ring" ]] && command -v python3 >/dev/null 2>&1 \
 fi
 [[ -f "$icon" ]] && ln -sfn "$icon" "$WS_SESSION_DIR/favicon.ico"
 "$t3" project add --title "$WS_SLUG" "$WS_SESSION_DIR" || true
+if "$open_in_t3"; then "$t3" app "$WS_SESSION_DIR" || true; fi
 exit 0

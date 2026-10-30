@@ -284,7 +284,8 @@ puts in browser tabs (plain icon if the workspace has no color). `pre-remove`
 unregisters the project again, keeping its threads. Both look for the `t3` CLI (`$T3_CLI`, then `t3` on `PATH`,
 then `~/.t3/bin/t3`) and do nothing when T3 Code isn't installed, so they're safe
 to enable on every machine. `T3_FAVICON_APP` picks another app's icon (default
-`admin`). To add
+`admin`). Run inside T3 (its terminal, or an agent you ask to `ws create`), the
+hook also opens the new project in T3; `T3_OPEN=always|never` overrides that. To add
 workspaces that existed before you enabled the hook, run it once per workspace
 (set `WORKSPACES_ROOT` to the value in your `config.sh`):
 

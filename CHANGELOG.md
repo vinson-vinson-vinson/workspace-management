@@ -9,6 +9,19 @@ when a release is tagged.
 
 ## [Unreleased]
 
+### Added
+- `ws test --full`: the whole bookings-api suite the way CI runs it, in ~3.5
+  min instead of ~5.8 on an M3 Max. Starts a dedicated MySQL on demand
+  (Homebrew mysqld with the CI flags, datadir on a RAM disk, port 3308; `ws
+  test --db-status` / `--db-stop`), uses the mjml server container, runs PHP
+  without Xdebug but with JIT, and orders files by `tests/durations.json` via
+  `tests/shard.php`. The shard config lives outside the worktree. Ends with
+  the duration and every failing test. `TEST_FULL_ENV` undoes the local `.env`
+  values CI doesn't have (LLM endpoint, `APP_URL`, SMTP mailer).
+- `ws test --changed` (only the tests related to the branch's changes),
+  `--parallel [--processes N]` (paratest), and `FLAKY_TESTS` in config.sh,
+  excluded by default (`--with-flaky` to include them).
+
 ## [2.25.0] — 2026-10-08
 
 ### Added

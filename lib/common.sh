@@ -429,6 +429,24 @@ load_config() {
   # memory_limit handed to php for `ws test`. The CLI php.ini default (often
   # 128M) runs out partway through a full suite.
   TEST_MEMORY_LIMIT="${TEST_MEMORY_LIMIT:-1G}"
+  # `ws test --full`: paratest processes and the dedicated test MySQL (RAM
+  # disk, CI flags) + mjml container. See lib/test_instance.sh.
+  TEST_FULL_PROCESSES="${TEST_FULL_PROCESSES:-16}"
+  TEST_MYSQL_PREFIX="${TEST_MYSQL_PREFIX:-/opt/homebrew/opt/mysql@8.4}"
+  TEST_MYSQL_PORT="${TEST_MYSQL_PORT:-3308}"
+  TEST_MYSQL_SOCKET="${TEST_MYSQL_SOCKET:-/tmp/ws-test-mysql.sock}"
+  TEST_MYSQL_VOLUME="${TEST_MYSQL_VOLUME:-ws-test-mysql}"
+  TEST_MYSQL_RAMDISK_MB="${TEST_MYSQL_RAMDISK_MB:-6144}"
+  TEST_MYSQL_BUFFER_POOL="${TEST_MYSQL_BUFFER_POOL:-4G}"
+  TEST_MJML_CONTAINER="${TEST_MJML_CONTAINER:-ws-test-mjml}"
+  TEST_MJML_IMAGE="${TEST_MJML_IMAGE:-ghcr.io/anny-co/mjml-server:2.0.0}"
+  TEST_MJML_PORT="${TEST_MJML_PORT:-8089}"
+  TEST_MJML_WORKERS="${TEST_MJML_WORKERS:-4}"
+  # Env for --full that undoes what a worktree .env sets for local dev but CI
+  # never has: the real LLM endpoint (AI tests then bypass their fakes) and the
+  # workspace URL (longer URLs push the MCP context over its size budget) and
+  # the SMTP mailer (tests would deliver real mail to Mailhog).
+  [[ -n "${TEST_FULL_ENV[@]+x}" ]] || TEST_FULL_ENV=(OPENAI_BASE_URL= APP_URL=http://localhost MAIL_MAILER=array)
   # Terminal opened for post-create commands (e.g. yarn serve-*, an agent).
   TERMINAL_APP="${TERMINAL_APP:-terminal}"
   # Whether `ws create` auto-opens the session terminals at all. Config or

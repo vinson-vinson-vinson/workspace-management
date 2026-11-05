@@ -245,6 +245,36 @@ TEST_DB_PASSWORD=""
 # "Allowed memory size exhausted" fatal rather than a test failure.
 TEST_MEMORY_LIMIT="1G"
 
+# `ws test --full` — the whole suite the way CI runs it, on a dedicated MySQL
+# (Homebrew mysqld with the CI flags, datadir on a RAM disk, started on demand,
+# stopped with `ws test --db-stop`) plus the mjml server container. Measured on
+# an M3 Max (12P+4E): 16 processes ~3.5 min warm (14 about the same, 20 slower).
+# All optional, with these defaults.
+# TEST_FULL_PROCESSES=16
+# TEST_MYSQL_PREFIX="/opt/homebrew/opt/mysql@8.4"   # brew install mysql@8.4
+# TEST_MYSQL_PORT=3308
+# TEST_MYSQL_SOCKET="/tmp/ws-test-mysql.sock"
+# TEST_MYSQL_VOLUME="ws-test-mysql"                 # RAM disk name (/Volumes/…)
+# TEST_MYSQL_RAMDISK_MB=6144
+# TEST_MYSQL_BUFFER_POOL="4G"
+# TEST_MJML_CONTAINER="ws-test-mjml"
+# TEST_MJML_IMAGE="ghcr.io/anny-co/mjml-server:2.0.0"
+# TEST_MJML_PORT=8089
+# Env for --full runs that overrides what the worktree's .env sets for local
+# development but CI never has (CI has no .env). Without these, 16 AI tests call
+# the LLM endpoint from your .env instead of their faked default, and the MCP
+# context-size test counts your longer workspace URL, and mail goes out over
+# SMTP to Mailhog instead of the array mailer. Setting it replaces the
+# default, so keep these when you add more.
+# TEST_FULL_ENV=(OPENAI_BASE_URL= APP_URL=http://localhost MAIL_MAILER=array)
+
+# Tests `ws test` leaves out because they fail on wall-clock timing rather than
+# on code (regexes, joined into one --exclude-filter / negative --filter).
+# `ws test --with-flaky` runs them anyway.
+# FLAKY_TESTS=(
+#   'SomeTest::test_that_depends_on_the_clock'
+# )
+
 # ------------------------------ serving (ws serve) ---------------------------
 # `ws serve` makes a task worktree reachable at <sub>.$BASE_DOMAIN using Laravel
 # Valet's nginx + wildcard cert. If you don't use `ws serve` you can leave this

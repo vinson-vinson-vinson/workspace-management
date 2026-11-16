@@ -9,6 +9,8 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.26.0] — 2026-11-16
+
 ### Added
 - `hooks.example/{post-create,pre-remove}/t3-project.sh`: register each
   workspace as a [T3 Code](https://t3.codes) project on `ws create`, with the
@@ -750,7 +752,8 @@ the identity change.
   own `<sub>.anny.dev` subdomain via Laravel Valet/nginx, Cognitor key
   seeding, `install.sh`, and Homebrew tap packaging.
 
-[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.25.0...HEAD
+[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.26.0...HEAD
+[2.26.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.25.0...v2.26.0
 [2.25.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.24.0...v2.25.0
 [2.24.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.23.1...v2.24.0
 [2.23.1]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.23.0...v2.23.1

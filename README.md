@@ -84,6 +84,7 @@ The essentials:
 | `FRONTEND_REPO` / `BACKEND_REPO` | Full paths to the main clones. |
 | `WORKSPACES_ROOT` | Where session worktrees are created. |
 | `FRONTEND_BASE_BRANCH` / `BACKEND_BASE_BRANCH` | Branch new worktrees are cut from. |
+| `FRONTEND_BRANCH_PREFIX` / `BACKEND_BRANCH_PREFIX` | Prefix namespacing the shared branch name per repo: with `FRONTEND_BRANCH_PREFIX="admin-next/"`, workspace `CU-1234_x` puts the frontend on `admin-next/CU-1234_x` and the backend on `CU-1234_x`. Used by `create`, `open` and `remove`; idempotent (`admin-next/CU-1234_x` typed in is the same workspace, never `admin-next/admin-next/…`); a branch cut before the prefix is still found under its bare name. Default empty. |
 | `FRONTEND_REMOTE` / `BACKEND_REMOTE` | Git remote each repo fetches from and pushes to (both default to `origin`). Per repo, so a forked frontend and an upstream backend both work. `--remote <name>` on `create`/`open`/`mr` overrides both for one run. |
 | `FRONTEND_IDE` / `BACKEND_IDE` | IDE each repo opens in: `vscode` (default), `phpstorm`, `webstorm`, or `zed`. Same value → one combined window; different values → separate windows per worktree. |
 | `TASK_ID_PREFIX` | Prefix that marks a "task" workspace (default `CU`, for ClickUp). |
@@ -116,7 +117,7 @@ Everything is one command, `workspaces` (alias `ws`), with subcommands:
 | --- | --- |
 | `ws create <slug> [base[@remote]]` | Create (or reopen) a workspace: add both worktrees, write a `.code-workspace`, open the configured IDE(s) (`FRONTEND_IDE`/`BACKEND_IDE`, VS Code by default). An optional second argument bases the branches on an existing branch instead of the configured base; `branch@remote` takes it from another git remote (e.g. a bot branch on a GitHub fork). When that's VS Code, it auto-runs `ws serve` and then `yarn serve-<app>` per default app, each in its own terminal; `--neanderthal` skips those tasks. |
 | `ws list` (or bare `ws`) | List all workspaces, star the one you're in, link each served one to its landing URL. The `#` column numbers the rows for `ws open`. |
-| `ws open <N\|slug>` | Open a workspace by its `ws list` index (or slug) in the IDE(s) named by `FRONTEND_IDE`/`BACKEND_IDE` — VS Code by default, or PhpStorm/WebStorm/Zed. Same IDE on both sides → one combined window; different IDEs → each worktree opens separately. Index 0 (or `MAIN`) opens the main workspace (`MAIN_WORKSPACE_FILE`, or both main repos). A **slug with no workspace behind it is created first** (`--no-create` opts out; `--remote`/`--base` say where the branch comes from), which is what makes an `ws://open/<slug>` link work on a machine that has never seen that workspace. |
+| `ws open <N\|slug>` | Open a workspace by its `ws list` index (or slug) in the IDE(s) named by `FRONTEND_IDE`/`BACKEND_IDE` — VS Code by default, or PhpStorm/WebStorm/Zed. Same IDE on both sides → one combined window; different IDEs → each worktree opens separately. Index 0 (or `MAIN`) opens the main workspace (`MAIN_WORKSPACE_FILE`, or both main repos). A **slug with no workspace behind it is created first** when its branch exists in at least one repo (locally or on the remote, each repo's `*_BRANCH_PREFIX` applied): that branch is checked out, and the other repo gets a new one of the same name cut from its base. With no branch in either repo it asks `Create them as new work? [y/N]` before cutting both from their bases; with no terminal it creates nothing unless `--yes` is given. `--no-create` opts out; `--remote`/`--base` say where the branch comes from and what the missing side is cut from. This is what makes an `ws://open/<slug>` link work on a machine that has never seen that workspace. |
 | `ws serve [slug]` | Make a workspace reachable at `<sub>.<domain>` via Valet/nginx: rewrite envs, write the nginx block, install deps. Slug defaults to the current directory. Does **not** start dev servers — it prints the `yarn serve-*` commands. |
 | `ws recolor [N\|slug]` | Give a workspace a new accent color, drawn from the same picker `ws create` uses (random, from the unused colors farthest from everything live — its own current color included, so the result always looks different). Rewrites only the color keys in the `.code-workspace`; an open VS Code window updates at once. `--color '#rrggbb'` sets an exact color. Slug defaults to cwd. |
 | `ws remove [slug]` | Tear a workspace down safely: revert routing, remove worktrees, delete branches, clean the session dir. Refuses on unpushed work unless `--force`. Before deleting, runs the `envdiff` report and backs the workspace's `.env` files up to `ENV_BACKUP_DIR/<slug>/` (default `~/Projects/ws_envs`), so keys that only ever lived in the workspace are neither lost nor silently merged into MAIN. Slug defaults to cwd. |
@@ -180,8 +181,9 @@ the same tail (`cursor/foo`, `codex/foo`) would otherwise want the same
 workspace.
 
 `remote` and `base` matter on an **open** link too, because opening a slug the
-machine doesn't have creates it first: they decide which remote the branch is
-fetched from and what it's cut from if it doesn't exist yet. `remote` is a
+machine doesn't have creates it first (when its branch exists in at least one
+repo): they decide which remote the branch is fetched from and what the other
+repo's branch is cut from. `remote` is a
 remote *name* the repos already have (`FRONTEND_REMOTE`/`BACKEND_REMOTE`), never
 a URL — a link can pick between your remotes, it can't introduce one.
 

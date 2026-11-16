@@ -4,16 +4,18 @@
 # IDE(s) by its `ws list` index (or slug). Just the editor — no serving.
 #
 # One exception to "no side effects": a slug with no workspace behind it is
-# created first (--no-create opts out). That is what makes an `ws://open/<slug>`
-# deep link portable — the person clicking it doesn't have your session dir, and
-# a link that errors out on every machine but yours is not a link.
+# created first (--no-create opts out). When its branch exists in at least one
+# repo that happens straight away; when it exists in neither, it asks first
+# (--yes skips the question). That is what makes an `ws://open/<slug>` deep
+# link portable — the person clicking it doesn't have your session dir, and a
+# link that errors out on every machine but yours is not a link.
 # -----------------------------------------------------------------------------
 
 cmd_open_usage() {
   cat <<'USAGE'
 Usage:
   ws open <N | SLUG> [--branch <name>] [--remote <name>] [--base <branch>]
-          [--no-create] [--dry-run]
+          [--no-create] [--yes] [--dry-run]
   ws open --branch <name> [...]        (workspace named after the branch)
 
 Opens the workspace in the IDE(s) named by FRONTEND_IDE / BACKEND_IDE in
@@ -29,21 +31,32 @@ MAIN_WORKSPACE_FILE from config.sh, or — if unset/missing — both main repos 
 one new window.
 
 A SLUG with no workspace behind it is created first (`ws create <slug>`), then
-opened. An index never creates anything: it can only name a workspace that
-already exists.
+opened — when its branch exists in at least one repo, locally or on the remote
+(each repo's FRONTEND_BRANCH_PREFIX / BACKEND_BRANCH_PREFIX applied). The repo
+that has it gets it checked out; the other gets a new branch of the same name,
+its own prefix applied, cut from its base. With no branch in either repo it
+asks "Create them as new work? [y/N]" before cutting both from their bases;
+without a terminal to ask on (a script) it creates nothing unless --yes is
+given. A name with a prefix (admin-next/CU-1_x) is the same workspace as
+CU-1_x; prefixes are never doubled. An index never creates anything: it can
+only name a workspace that already exists.
 
 Options:
   --branch <name>  Branch to put the worktrees on when the workspace has to be
                    created, for a branch whose name can't be the workspace's
-                   directory name (an agent's "cursor/my-feature-05ff"). With
-                   no N|SLUG given, the workspace is the branch's last segment
-                   ("my-feature-05ff"), so a branch is enough to open one.
+                   directory name (an agent's "cursor/my-feature-05ff"). Both
+                   repos share the name; a prefixed one (admin-next/CU-1_x)
+                   works too. With no N|SLUG given, the workspace is the
+                   branch's last segment ("my-feature-05ff"), so a branch is
+                   enough to open one.
   --remote <name>  Fetch the branch through this remote in both repos when the
                    workspace has to be created (overrides FRONTEND_REMOTE /
                    BACKEND_REMOTE for that run).
-  --base <branch>  Base branch to cut from if the branch is nowhere yet — same
-                   meaning as `ws create <slug> <base>`.
+  --base <branch>  Base to cut the missing repo's branch from — same meaning
+                   as `ws create <slug> <base>`.
   --no-create      Fail on an unknown slug instead of creating it.
+  -y, --yes        Create brand-new branches without asking when neither repo
+                   has the branch (what `ws open` did before it asked).
   --dry-run        Print actions without executing them.
   -v, --verbose    Narrate each step.
   -h, --help       Show this help.
@@ -69,6 +82,72 @@ open_main_workspace() {
   open_workspace_editors "$FRONTEND_REPO" "$BACKEND_REPO" "$workspace_file" "" "MAIN"
 }
 
+# `ws open` opens existing work. A workspace it has to create is looked up by
+# branch first, in both repos, locally and on the remote. Found in at least
+# one: `ws create` checks that one out and cuts the other repo's branch under
+# the same name (its prefix applied). Found in neither: that is new work, so
+# ask before cutting both from their bases (--yes answers for a script; with
+# no terminal and no --yes, nothing is created). Returns 0 to go ahead; sets
+# OPEN_FOUND_BRANCHES for the log line (empty = brand-new branches).
+OPEN_FOUND_BRANCHES=""
+OPEN_ASSUME_YES=false
+require_existing_branch() {
+  local slug="$1" base="$2" branch="$3" name fe be
+  local -a found=()
+  name="$(branch_base_name "${branch:-$slug}")"
+  require_repo "$FRONTEND_REPO"
+  require_repo "$BACKEND_REPO"
+  require_remote "$FRONTEND_REPO" "$(remote_for_repo "$FRONTEND_REPO")"
+  require_remote "$BACKEND_REPO" "$(remote_for_repo "$BACKEND_REPO")"
+  spin "looking for branch '$name'"
+  if fe="$(resolve_workspace_branch "$FRONTEND_REPO" "$FRONTEND_BRANCH_PREFIX" "$name")"; then
+    found+=("$FRONTEND_DIR_NAME $fe")
+  fi
+  if be="$(resolve_workspace_branch "$BACKEND_REPO" "$BACKEND_BRANCH_PREFIX" "$name")"; then
+    found+=("$BACKEND_DIR_NAME $be")
+  fi
+  spin_stop
+  if [[ ${#found[@]} -gt 0 ]]; then
+    OPEN_FOUND_BRANCHES="$(printf '%s, ' "${found[@]}")"
+    OPEN_FOUND_BRANCHES="${OPEN_FOUND_BRANCHES%, }"
+    return 0
+  fi
+  warn "No branches exist: no '$fe' in $FRONTEND_DIR_NAME, no '$be' in $BACKEND_DIR_NAME (local or on the remote)."
+  local fe_base="$FRONTEND_BASE_BRANCH" be_base="$BACKEND_BASE_BRANCH"
+  if [[ -n "$base" ]]; then
+    fe_base="$base"
+    be_base="$base"
+  fi
+  local answer="" asked=false
+  if "$OPEN_ASSUME_YES"; then
+    answer="y"
+  elif [[ -t 0 ]]; then
+    asked=true
+    printf 'Create them as new work — %s %s from %s, %s %s from %s? [y/N] ' \
+      "$FRONTEND_DIR_NAME" "$fe" "$fe_base" "$BACKEND_DIR_NAME" "$be" "$be_base"
+    read -r answer || answer=""
+  fi
+  case "$answer" in
+    [Yy]|[Yy]es) return 0 ;;
+  esac
+  # Declined, or no terminal to ask on (a script): nothing is created.
+  if ! "$asked"; then
+    printf '  No terminal to ask on — pass --yes to create them without asking.\n' >&2
+  fi
+  local -a create_cmd=(ws create "$slug")
+  if [[ -n "$base" ]]; then
+    create_cmd+=("$base")
+  fi
+  if [[ "$name" != "$slug" ]]; then
+    create_cmd+=(--branch "$name")
+  fi
+  if [[ -n "$REMOTE_OVERRIDE" ]]; then
+    create_cmd+=(--remote "$REMOTE_OVERRIDE")
+  fi
+  printf '  Nothing created. Start it as new work with: %s\n' "${create_cmd[*]}" >&2
+  exit 1
+}
+
 # Hand an unknown slug to `ws create` — a separate process, so the create flow
 # (fetch, worktrees, .code-workspace, terminals) runs exactly as it does on its
 # own, with no half-shared state between the two commands.
@@ -80,7 +159,11 @@ open_by_creating() {
   [[ -n "$REMOTE_OVERRIDE" ]] && args+=(--remote "$REMOTE_OVERRIDE")
   "$DRY_RUN" && args+=(--dry-run)
   "$VERBOSE" && args+=(-v)
-  log "No workspace '$slug' yet — creating it${branch:+ on branch $branch}${REMOTE_OVERRIDE:+ from remote $REMOTE_OVERRIDE}."
+  if [[ -n "$OPEN_FOUND_BRANCHES" ]]; then
+    log "No workspace '$slug' yet — found ${OPEN_FOUND_BRANCHES}${REMOTE_OVERRIDE:+ on remote $REMOTE_OVERRIDE}; creating it."
+  else
+    log "No workspace '$slug' yet — creating it on new branches."
+  fi
   "$WSM_HOME/workspaces" create "${args[@]}" \
     || { err "Could not create '$slug' — not opening anything."; exit 1; }
 }
@@ -100,6 +183,7 @@ cmd_open() {
         [[ $# -ge 2 && -n "$2" ]] || { err "--branch needs a branch name."; exit 1; }
         branch="$2"; shift 2 ;;
       --no-create) create_missing=false; shift ;;
+      -y|--yes) OPEN_ASSUME_YES=true; shift ;;
       --dry-run) DRY_RUN=true; shift ;;
       -v|--verbose) VERBOSE=true; shift ;;
       -h|--help) cmd_open_usage; exit 0 ;;
@@ -145,6 +229,11 @@ cmd_open() {
     return 0
   else
     slug="$target"
+    # A slug typed with a repo prefix (admin-next/CU-1234_x) means the
+    # workspace CU-1234_x — directories never carry one.
+    if [[ ! -d "$WORKSPACES_ROOT/$slug" ]]; then
+      slug="$(branch_base_name "$slug")"
+    fi
     if [[ ! -d "$WORKSPACES_ROOT/$slug" ]]; then
       # `ws create` normalises what it is handed (canonical task id, slugified
       # feature name), so the directory is often not spelled like the argument —
@@ -157,6 +246,7 @@ cmd_open() {
         slug="$canonical"
       else
         "$create_missing" || { err "No workspace named '$slug' (see 'ws list')."; exit 1; }
+        require_existing_branch "$canonical" "$base" "$branch"
         open_by_creating "$slug" "$base" "$branch"
         slug="$canonical"
         # create opened the IDE itself unless the config told it not to; only

@@ -15,6 +15,11 @@ Usage:
 Rules:
   - With task:    CU-<taskId>_<feature-name>  -> slug/branch CU-<taskId>_<feature-name>
   - Without task: <feature-name>              -> slug/branch <feature-name>
+  - Both repos' branches share that name. FRONTEND_BRANCH_PREFIX /
+    BACKEND_BRANCH_PREFIX in config.sh namespace it per repo ("admin-next/" ->
+    admin-next/CU-<taskId>_<feature-name>). An existing branch is checked out
+    (the prefixed name first, then the bare one); a missing one is cut from
+    that repo's base.
   - BASE_BRANCH bases the new workspace branches on an existing branch instead
     of the configured base (main) — e.g. to stack follow-up work on a feature
     still in review. Applied per repo where the branch exists (locally or on
@@ -34,9 +39,11 @@ Options:
   --branch NAME        Put the worktrees on this branch instead of one named
                        after the slug — the way to open a workspace on a branch
                        whose name can't be a directory name (an agent's
-                       "cursor/my-feature-05ff", say). Existing locally or on
-                       the remote, it is checked out; otherwise it is created
-                       from the base. With no slug given, the workspace is named
+                       "cursor/my-feature-05ff", say). Each repo's prefix still
+                       applies; a NAME given with one (admin-next/x) has it
+                       stripped first. Existing locally or on the remote, it is
+                       checked out; otherwise it is created from the base. With
+                       no slug given, the workspace is named
                        after the branch's last segment, so
                        --branch cursor/my-feature-05ff creates the workspace
                        "my-feature-05ff".
@@ -99,29 +106,12 @@ worktree_registered() {
   git -C "$1" worktree list --porcelain | grep -Fqx "worktree $2"
 }
 
-branch_exists_local() {
-  git -C "$1" show-ref --verify --quiet "refs/heads/$2"
-}
-
-# Read-only check whether a branch exists on a remote — an explicit one, or
-# the repo's configured remote. Uses the already-fetched remote-tracking ref
-# first, then a network query that mutates nothing locally.
-remote_branch_exists() {
-  local repo="$1" branch="$2" remote="${3:-}"
-  [[ -n "$remote" ]] || remote="$(remote_for_repo "$repo")"
-  if git -C "$repo" show-ref --verify --quiet "refs/remotes/$remote/$branch"; then
-    return 0
-  fi
-  git -C "$repo" ls-remote --heads --exit-code "$remote" "$branch" >/dev/null 2>&1
-}
+# branch_exists_local / remote_branch_exists / branch_available and the
+# workspace-branch naming (prefixes) live in common.sh, shared with `ws open`
+# and `ws remove`.
 
 remote_exists() {
   git -C "$1" remote get-url "$2" >/dev/null 2>&1
-}
-
-# True if BRANCH exists in REPO at all — locally or on its remote.
-branch_available() {
-  branch_exists_local "$1" "$2" || remote_branch_exists "$1" "$2"
 }
 
 # Records how the branch was obtained, so the milestone check can say what
@@ -365,7 +355,10 @@ cmd_create() {
   if [[ ${#positional[@]} -lt 1 || ${#positional[@]} -gt 2 ]]; then
     cmd_create_usage; exit 1
   fi
-  combined="${positional[0]}"
+  # A name typed with a repo prefix (admin-next/CU-1234_x, copied from the
+  # frontend) names the same workspace as CU-1234_x — the prefix is added back
+  # per repo below, never doubled.
+  combined="$(branch_base_name "${positional[0]}")"
   BASE_OVERRIDE="${positional[1]:-}"
 
   # Optional BASE_BRANCH@REMOTE form: split on the LAST '@'. Deferred remote
@@ -391,16 +384,29 @@ cmd_create() {
 
   branch_slug="$(workspace_slug_for "$combined")"
 
-  # The workspace is named by its slug; the branch is normally named the same.
-  # --branch splits the two, which is the only way onto a branch whose name is
-  # not a legal directory name — "cursor/x-05ff" has a slash in it.
-  local wt_branch="${BRANCH_OVERRIDE:-$branch_slug}"
-  if [[ -n "$BRANCH_OVERRIDE" ]]; then
-    git check-ref-format --branch "$BRANCH_OVERRIDE" >/dev/null 2>&1 \
-      || { err "Not a valid branch name: '$BRANCH_OVERRIDE'"; exit 1; }
-    is_protected_branch "$BRANCH_OVERRIDE" \
-      && { err "Refusing to put a workspace on '$BRANCH_OVERRIDE' — that is a base branch."; exit 1; }
-  fi
+  # The workspace is named by its slug; the branches are normally named the
+  # same. --branch splits the two, which is the only way onto a branch whose
+  # name is not a legal directory name — "cursor/x-05ff" has a slash in it.
+  # Either way both repos share one branch NAME, and each repo's
+  # *_BRANCH_PREFIX namespaces it there (admin-next/CU-1234_x).
+  local wt_name
+  wt_name="$(branch_base_name "${BRANCH_OVERRIDE:-$branch_slug}")"
+  local fe_branch be_branch
+  fe_branch="$(with_branch_prefix "$FRONTEND_BRANCH_PREFIX" "$wt_name")"
+  be_branch="$(with_branch_prefix "$BACKEND_BRANCH_PREFIX" "$wt_name")"
+  local candidate
+  for candidate in "$fe_branch" "$be_branch"; do
+    if ! git check-ref-format --branch "$candidate" >/dev/null 2>&1; then
+      err "Not a valid branch name: '$candidate'"
+      exit 1
+    fi
+    # A prefix can turn a harmless name into a base branch: "head" becomes
+    # admin-next/head.
+    if is_protected_branch "$candidate"; then
+      err "Refusing to put a workspace on '$candidate' — that is a base branch."
+      exit 1
+    fi
+  done
 
   session_dir="$WORKSPACES_ROOT/$branch_slug"
   frontend_worktree="$session_dir/$FRONTEND_DIR_NAME"
@@ -489,7 +495,7 @@ cmd_create() {
   frontend_ref="$(resolve_base_ref "$FRONTEND_REPO" "$fe_base" "$fe_base_remote")"
   backend_ref="$(resolve_base_ref "$BACKEND_REPO" "$be_base" "$be_base_remote")"
 
-  vlog "Session slug: $branch_slug (branch: $wt_branch)"
+  vlog "Session slug: $branch_slug (branch name: $wt_name)"
   vlog "Frontend worktree: $frontend_worktree"
   vlog "Backend worktree: $backend_worktree"
   vlog "Workspace file: $workspace_file"
@@ -539,6 +545,11 @@ cmd_create() {
       err "Creation failed. Rolling back newly created worktrees."
       "$created_backend"  && git -C "$BACKEND_REPO" worktree remove -f "$backend_worktree" || true
       "$created_frontend" && git -C "$FRONTEND_REPO" worktree remove -f "$frontend_worktree" || true
+      # The session dir too, if nothing else is in it: an empty one left behind
+      # reads as an existing workspace, and the next `ws open` of that slug
+      # fails with "No workspace file" instead of creating it. rmdir never
+      # deletes a dir with content in it.
+      rmdir "$session_dir" 2>/dev/null || true
     fi
     exit "$status"
   }
@@ -549,19 +560,28 @@ cmd_create() {
   # Can be slow: may fetch from the remote before adding each worktree.
   local fe_branch_origin be_branch_origin
   spin "creating worktrees"
-  add_worktree "$FRONTEND_REPO" "$wt_branch" "$frontend_worktree" "$frontend_ref"
+  # Which branch each worktree goes on: an existing one (the prefixed name
+  # first, then the bare one), else the prefixed name, cut from the repo's base.
+  if ! fe_branch="$(resolve_workspace_branch "$FRONTEND_REPO" "$FRONTEND_BRANCH_PREFIX" "$wt_name")"; then
+    vlog "No $FRONTEND_DIR_NAME branch '$fe_branch' yet — cutting it from $frontend_ref."
+  fi
+  if ! be_branch="$(resolve_workspace_branch "$BACKEND_REPO" "$BACKEND_BRANCH_PREFIX" "$wt_name")"; then
+    vlog "No $BACKEND_DIR_NAME branch '$be_branch' yet — cutting it from $backend_ref."
+  fi
+  add_worktree "$FRONTEND_REPO" "$fe_branch" "$frontend_worktree" "$frontend_ref"
   created_frontend=true
   fe_branch_origin="$BRANCH_ORIGIN"
-  add_worktree "$BACKEND_REPO" "$wt_branch" "$backend_worktree" "$backend_ref"
+  add_worktree "$BACKEND_REPO" "$be_branch" "$backend_worktree" "$backend_ref"
   created_backend=true
   be_branch_origin="$BRANCH_ORIGIN"
   spin_stop
-  # Usually both repos take the same base and the two origins agree; with a
-  # BASE_BRANCH that exists in only one repo they can differ — say so.
-  if [[ "$fe_branch_origin" == "$be_branch_origin" ]]; then
-    ok "branches ${BRANCH_ORIGIN} ($wt_branch)"
+  # Usually both repos get the same branch the same way. A prefix, a branch
+  # found in only one repo, or a BASE_BRANCH that exists in only one makes them
+  # differ — then say per repo what happened.
+  if [[ "$fe_branch_origin" == "$be_branch_origin" && "$fe_branch" == "$be_branch" ]]; then
+    ok "branches ${fe_branch_origin} ($fe_branch)"
   else
-    ok "branches: $FRONTEND_DIR_NAME ${fe_branch_origin}, $BACKEND_DIR_NAME ${be_branch_origin} ($wt_branch)"
+    ok "branches: $FRONTEND_DIR_NAME $fe_branch (${fe_branch_origin}), $BACKEND_DIR_NAME $be_branch (${be_branch_origin})"
   fi
   ok "worktrees added ($FRONTEND_DIR_NAME, $BACKEND_DIR_NAME)"
 

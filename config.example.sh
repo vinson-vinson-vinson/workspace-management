@@ -44,6 +44,16 @@ SYNC_MAIN_WORKSPACE=true
 FRONTEND_BASE_BRANCH="main"
 BACKEND_BASE_BRANCH="main"
 
+# Branch prefix per repo. Both repos' branches share one name — the
+# workspace's, e.g. CU-1234_my-feature — and a prefix namespaces it in that
+# repo: FRONTEND_BRANCH_PREFIX="admin-next/" puts the frontend worktree on
+# admin-next/CU-1234_my-feature while the backend stays on CU-1234_my-feature.
+# Applied when cutting new branches and when looking for existing ones
+# (`ws create`, `ws open`, `ws remove`); a branch that only exists under the
+# bare name is still found. Optional; both default to empty (no prefix).
+FRONTEND_BRANCH_PREFIX=""
+BACKEND_BRANCH_PREFIX=""
+
 # The git remote each repo is fetched from and pushed to, per repo — the two
 # sides can live on different remotes (say a fork of the frontend and upstream
 # for the backend). Used by `ws create` (fetch, checkout, tracking) and `ws mr`

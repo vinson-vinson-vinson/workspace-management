@@ -210,8 +210,17 @@ remove_target_exists() {
   [[ -d "$WORKSPACES_ROOT/$slug" ]] && return 0
   git -C "$FRONTEND_REPO" worktree list --porcelain 2>/dev/null | grep -Fqx "worktree $fe_wt" && return 0
   git -C "$BACKEND_REPO"  worktree list --porcelain 2>/dev/null | grep -Fqx "worktree $be_wt" && return 0
-  git -C "$FRONTEND_REPO" show-ref --verify --quiet "refs/heads/$slug" && return 0
-  git -C "$BACKEND_REPO"  show-ref --verify --quiet "refs/heads/$slug" && return 0
+  local b
+  while IFS= read -r b; do
+    if branch_exists_local "$FRONTEND_REPO" "$b"; then
+      return 0
+    fi
+  done < <(workspace_branch_candidates "$FRONTEND_BRANCH_PREFIX" "$slug")
+  while IFS= read -r b; do
+    if branch_exists_local "$BACKEND_REPO" "$b"; then
+      return 0
+    fi
+  done < <(workspace_branch_candidates "$BACKEND_BRANCH_PREFIX" "$slug")
   [[ -n "$wf" && -f "$wf" ]] && return 0
   [[ -f "$(legacy_workspace_file_for "$slug")" ]] && return 0
   return 1
@@ -327,6 +336,16 @@ cmd_remove() {
       exit 1
     }
     vlog "Auto-detected slug from CWD: $slug"
+  fi
+
+  # A slug typed with a repo prefix (admin-next/CU-1234_x) means the workspace
+  # CU-1234_x — workspace directories never carry one.
+  if [[ ! -d "$WORKSPACES_ROOT/$slug" ]]; then
+    local bare_slug; bare_slug="$(branch_base_name "$slug")"
+    if [[ "$bare_slug" != "$slug" ]]; then
+      vlog "'$slug' carries a branch prefix — removing workspace '$bare_slug'."
+      slug="$bare_slug"
+    fi
   fi
 
   local session_dir="$WORKSPACES_ROOT/$slug"
@@ -448,9 +467,19 @@ cmd_remove() {
 
   # Count real deletions so we only claim "branches deleted" when some were.
   spin "deleting branches"
-  local branches_deleted=0
-  if remove_local_branch "$FRONTEND_REPO" "$slug" "frontend"; then branches_deleted=$((branches_deleted + 1)); fi
-  if remove_local_branch "$BACKEND_REPO" "$slug" "backend"; then branches_deleted=$((branches_deleted + 1)); fi
+  # Per repo, the prefixed name (admin-next/<slug>) and the bare one: a
+  # workspace cut before the prefix was configured sits on the bare name.
+  local branches_deleted=0 branch
+  while IFS= read -r branch; do
+    if remove_local_branch "$FRONTEND_REPO" "$branch" "frontend"; then
+      branches_deleted=$((branches_deleted + 1))
+    fi
+  done < <(workspace_branch_candidates "$FRONTEND_BRANCH_PREFIX" "$slug")
+  while IFS= read -r branch; do
+    if remove_local_branch "$BACKEND_REPO" "$branch" "backend"; then
+      branches_deleted=$((branches_deleted + 1))
+    fi
+  done < <(workspace_branch_candidates "$BACKEND_BRANCH_PREFIX" "$slug")
   if (( branches_deleted > 0 )); then
     spin_ok "branches deleted ($branches_deleted)"
   else

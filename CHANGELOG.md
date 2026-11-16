@@ -19,10 +19,37 @@ when a release is tagged.
   nothing when T3 Code isn't installed, so they're safe to enable on every
   machine.
 - Hooks get `WSM_HOME` in their environment, to reach the tool's `lib/`.
+- `FRONTEND_BRANCH_PREFIX` / `BACKEND_BRANCH_PREFIX`: both repos' branches
+  share the workspace's name, and a per-repo prefix namespaces it there —
+  `"admin-next/"` puts the frontend on `admin-next/CU-1234_x`, the backend on
+  `CU-1234_x`. `ws create` cuts new branches under it and finds existing ones
+  by it (then by the bare name, so branches cut before the prefix still
+  open); `ws remove` deletes the prefixed branch too. Idempotent: a name typed
+  with the prefix (`admin-next/CU-1234_x`, as a slug or `--branch`) is the
+  same workspace, and a prefix is never doubled. Unset, both default to empty
+  and nothing changes.
+- `ws open --yes` / `-y`: create brand-new branches without asking (for
+  scripts; see the `ws open` change below).
 
 ### Changed
 - The favicon ring drawing moved from an inline heredoc in `cmd_serve.sh` to
   `lib/favicon_ring.py`, so hooks can reuse it. Output is byte-identical.
+- `ws open` on a missing workspace looks for its branch in both repos first.
+  Found in at least one: that repo checks it out, the other gets a new branch
+  of the same name (prefix applied), no question asked. Found in neither: it
+  asks "Create them as new work? [y/N]" instead of silently cutting fresh
+  branches. Without a terminal (a script) it creates nothing unless `--yes` is
+  given — the one behaviour change for callers; deep links run in a terminal
+  and get the prompt.
+
+### Fixed
+- `ws create` / `ws open` took a branch for present when only a namespaced one
+  ended in its name (`git ls-remote` matches ref tails: `CU-1_x` hit
+  `admin-next/CU-1_x`), then died with "couldn't find remote ref". The remote
+  check now asks for the exact `refs/heads/<branch>`.
+- A failed `ws create` left its empty session dir behind, so the next
+  `ws open` of that slug took the workspace for existing and failed with "No
+  workspace file". The rollback now removes the dir when it is empty.
 
 ## [2.25.0] — 2026-10-08
 

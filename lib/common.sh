@@ -393,6 +393,12 @@ load_config() {
   # default to "origin", which is what every command used to hard-code.
   FRONTEND_REMOTE="${FRONTEND_REMOTE:-origin}"
   BACKEND_REMOTE="${BACKEND_REMOTE:-origin}"
+  # Per-repo branch prefix. Both repos' branches share one name (the
+  # workspace's, CU-1234_my-feature); a prefix namespaces it in that repo, so
+  # FRONTEND_BRANCH_PREFIX="admin-next/" -> admin-next/CU-1234_my-feature.
+  # Empty (the default) = the bare name.
+  FRONTEND_BRANCH_PREFIX="${FRONTEND_BRANCH_PREFIX:-}"
+  BACKEND_BRANCH_PREFIX="${BACKEND_BRANCH_PREFIX:-}"
   SYNC_MAIN_WORKSPACE="${SYNC_MAIN_WORKSPACE:-true}"
   # IDE per repo role (see config.example.sh); defaulted and validated here so
   # configs predating the settings keep working and typos fail loudly.
@@ -859,6 +865,107 @@ require_remote() {
   printf '  %sset FRONTEND_REMOTE/BACKEND_REMOTE in config.sh, or pass --remote.%s\n' \
     "$C_DIM" "$C_RESET" >&2
   exit 1
+}
+
+# ---------------------------- workspace branches ----------------------------
+# Both repos' branches carry one name, the workspace's (CU-1234_my-feature).
+# FRONTEND_BRANCH_PREFIX / BACKEND_BRANCH_PREFIX namespace it per repo
+# ("admin-next/" -> admin-next/CU-1234_my-feature). Shared by create, open and
+# remove, so the three always agree on what a workspace's branches are called.
+
+branch_exists_local() {
+  git -C "$1" show-ref --verify --quiet "refs/heads/$2"
+}
+
+# Read-only check whether a branch exists on a remote — an explicit one, or
+# the repo's configured remote. Uses the already-fetched remote-tracking ref
+# first, then a network query that mutates nothing locally. The query names
+# the FULL ref: ls-remote matches a bare pattern against the end of every ref,
+# so "CU-1234_x" would also hit refs/heads/admin-next/CU-1234_x — and the
+# fetch that follows would then fail with "couldn't find remote ref".
+remote_branch_exists() {
+  local repo="$1" branch="$2" remote="${3:-}"
+  if [[ -z "$remote" ]]; then
+    remote="$(remote_for_repo "$repo")"
+  fi
+  if git -C "$repo" show-ref --verify --quiet "refs/remotes/$remote/$branch"; then
+    return 0
+  fi
+  git -C "$repo" ls-remote --heads --exit-code "$remote" "refs/heads/$branch" >/dev/null 2>&1
+}
+
+# True if BRANCH exists in REPO at all — locally or on its remote.
+branch_available() {
+  branch_exists_local "$1" "$2" || remote_branch_exists "$1" "$2"
+}
+
+# The bare workspace branch name: every leading repo prefix stripped, however
+# often it repeats. admin-next/CU-1234_x (copied from the frontend) and even
+# admin-next/admin-next/CU-1234_x both become CU-1234_x.
+branch_base_name() {
+  local name="$1" stripped=true
+  while "$stripped"; do
+    stripped=false
+    if [[ -n "$FRONTEND_BRANCH_PREFIX" && "$name" == "$FRONTEND_BRANCH_PREFIX"?* ]]; then
+      name="${name#"$FRONTEND_BRANCH_PREFIX"}"
+      stripped=true
+    fi
+    if [[ -n "$BACKEND_BRANCH_PREFIX" && "$name" == "$BACKEND_BRANCH_PREFIX"?* ]]; then
+      name="${name#"$BACKEND_BRANCH_PREFIX"}"
+      stripped=true
+    fi
+  done
+  printf '%s' "$name"
+}
+
+# NAME under PREFIX — idempotent: a name that already carries the prefix comes
+# back unchanged, so nothing ever ends up on admin-next/admin-next/CU-1234_x.
+# The one place a prefix is put in front of a branch name.
+with_branch_prefix() {
+  local prefix="$1" name="$2"
+  if [[ -z "$prefix" ]]; then
+    printf '%s' "$name"
+    return 0
+  fi
+  if [[ "$name" == "$prefix"* ]]; then
+    printf '%s' "$name"
+    return 0
+  fi
+  printf '%s%s' "$prefix" "$name"
+}
+
+# Echo the branch REPO's worktree goes on for workspace branch NAME under the
+# repo's PREFIX. Returns 0 when it already exists (locally or on the remote):
+# the prefixed name first, then the bare one (a branch cut before the prefix
+# was configured, or an agent's). Returns 1 when neither exists, echoing the
+# prefixed name — the branch `ws create` cuts from the repo's base. NAME may
+# arrive prefixed already; it is reduced to the bare name first.
+resolve_workspace_branch() {
+  local repo="$1" prefix="$2" name prefixed
+  name="$(branch_base_name "$3")"
+  prefixed="$(with_branch_prefix "$prefix" "$name")"
+  if branch_available "$repo" "$prefixed"; then
+    printf '%s' "$prefixed"
+    return 0
+  fi
+  if [[ "$prefixed" != "$name" ]] && branch_available "$repo" "$name"; then
+    printf '%s' "$name"
+    return 0
+  fi
+  printf '%s' "$prefixed"
+  return 1
+}
+
+# The local branch names a workspace's worktree in one repo can sit on, one
+# per line: the prefixed name, plus the bare one when there is a prefix.
+workspace_branch_candidates() {
+  local prefix="$1" name prefixed
+  name="$(branch_base_name "$2")"
+  prefixed="$(with_branch_prefix "$prefix" "$name")"
+  printf '%s\n' "$prefixed"
+  if [[ "$prefixed" != "$name" ]]; then
+    printf '%s\n' "$name"
+  fi
 }
 
 # True if BRANCH is one of the protected base ("main") branches we must never

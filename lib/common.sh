@@ -221,6 +221,7 @@ run_hooks() {
   local event="$1" dir hook name rc=0 hrc
   dir="$WSM_HOOKS_DIR/$event"
   [[ -d "$dir" ]] || return 0
+  export WSM_HOME                                 # so hooks can reach lib/
   for hook in "$dir"/*; do
     [[ -f "$hook" && -x "$hook" ]] || continue    # skip non-exec files (READMEs)
     name="${hook##*/}"

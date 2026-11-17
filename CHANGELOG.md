@@ -9,6 +9,8 @@ when a release is tagged.
 
 ## [Unreleased]
 
+## [2.27.0] — 2026-11-17
+
 ### Added
 - `ws slug <name> [--branch NAME] [--json]`: the slug and both branch names
   `ws create` would use for the same arguments, the two branch prefixes, and
@@ -794,7 +796,8 @@ the identity change.
   own `<sub>.anny.dev` subdomain via Laravel Valet/nginx, Cognitor key
   seeding, `install.sh`, and Homebrew tap packaging.
 
-[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.26.0...HEAD
+[Unreleased]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.27.0...HEAD
+[2.27.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.26.0...v2.27.0
 [2.26.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.25.0...v2.26.0
 [2.25.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.24.0...v2.25.0
 [2.24.0]: https://github.com/vinson-vinson-vinson/workspace-management/compare/v2.23.1...v2.24.0

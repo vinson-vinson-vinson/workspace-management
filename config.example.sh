@@ -105,7 +105,11 @@ BACKEND_IDE="vscode"
 
 # Set to true to NOT open VS Code after `ws create`. The worktrees and the
 # .code-workspace file are still created — you open the workspace yourself
-# (e.g. via the clickable name in `ws list`). Optional; defaults to false.
+# (e.g. via the clickable name in `ws list`). With true, create serves the
+# workspace itself and opens the session terminals (TERMINAL_APP, below) —
+# the VS Code tasks that normally do that only run in a window create opens.
+# Handy when the work happens elsewhere, e.g. in T3 Code. Optional; defaults
+# to false.
 NO_OPEN_AFTER_CREATE=false
 
 # Source of the `ws list` wordmark banner's gradient. Optional; one of:
@@ -149,9 +153,11 @@ EXTRA_WORKSPACE_FOLDERS=(
 )
 
 # ------------------------- post-create terminals -----------------------------
-# Only used when FRONTEND_IDE/BACKEND_IDE aren't both vscode: a VS Code
-# workspace starts these same commands from its .code-workspace tasks block,
-# and running both would start every dev server twice.
+# Used whenever VS Code isn't the one starting the dev servers: another IDE,
+# or NO_OPEN_AFTER_CREATE=true (no window). `ws create` then runs `ws serve`
+# itself and opens these terminals. A VS Code window that create opens starts
+# the same commands from its .code-workspace tasks block instead — running
+# both would start every dev server twice.
 
 # Terminal app used for the workspace's terminals: "terminal" (default) or
 # "warp". Optional.

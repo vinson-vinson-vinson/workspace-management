@@ -34,6 +34,9 @@ Rules:
     BACKEND_IDE in config.sh (disable with NO_OPEN_AFTER_CREATE=true). When
     that is VS Code, it also starts one terminal running `ws serve`, and when
     it finishes, one terminal per default app running `yarn serve-<app>`.
+    Otherwise — another IDE, or no window (NO_OPEN_AFTER_CREATE=true) —
+    create runs `ws serve` itself and then opens the session terminals
+    (TERMINAL_APP: Terminal or Warp) with `yarn serve-<app>` and SESSION_TABS.
 
 Options:
   --branch NAME        Put the worktrees on this branch instead of one named
@@ -166,17 +169,21 @@ open_workspace() {
     "$workspace_file" "$session_dir" "$branch_slug"
 }
 
-# The .code-workspace auto-serve tasks only ever fire in VS Code, so with any
-# other IDE configured `ws create` finished with an unserved workspace and no
-# indication why. Run `ws serve` directly in that case, to match the zero-step
-# VS Code flow. Idempotent: safe on an already-served workspace.
+# The .code-workspace auto-serve tasks only fire in a VS Code window that
+# create opens, so with another IDE — or no window at all
+# (NO_OPEN_AFTER_CREATE=true) — `ws create` would finish with an unserved
+# workspace and no indication why. Run `ws serve` directly in that case, to
+# match the zero-step VS Code flow. Idempotent: safe on an already-served
+# workspace.
 auto_serve_if_needed() {
   if ! "$AUTO_SERVE"; then
     vlog "Neanderthal mode — skipping auto-serve."
     return 0
   fi
   # VS Code handles serve + dev servers via .code-workspace tasks.
-  [[ "$FRONTEND_IDE" == "vscode" && "$BACKEND_IDE" == "vscode" ]] && return 0
+  if vscode_runs_dev_tasks; then
+    return 0
+  fi
   # The child process parses its own flags, so --dry-run would NOT propagate —
   # without this guard a dry-run create performed a fully real serve (env
   # writes, dependency install, nginx + sudo) on an existing workspace.
@@ -190,10 +197,11 @@ auto_serve_if_needed() {
   # WS_TERMINALS_PENDING: serve is a separate process, so it can't see that
   # create is about to open the terminals — without this its landing box hands
   # over a `yarn serve-…` command that would start a second copy. Only claimed
-  # when the terminals will actually open (TERMINAL_ENABLED, non-VS-Code IDEs);
-  # otherwise serve's manual `yarn serve-…` hint is exactly what we want.
+  # when the terminals will actually open (TERMINAL_ENABLED, and VS Code is not
+  # the one running the dev tasks); otherwise serve's manual `yarn serve-…`
+  # hint is exactly what we want.
   local terminals_pending=false
-  if [[ "$TERMINAL_ENABLED" == "true" ]] && ! [[ "$FRONTEND_IDE" == "vscode" && "$BACKEND_IDE" == "vscode" ]]; then
+  if [[ "$TERMINAL_ENABLED" == "true" ]]; then
     terminals_pending=true
   fi
   log "Serving workspace…"
@@ -213,12 +221,19 @@ auto_serve_if_needed() {
 # (Deliberately NOT a command-less "dev servers" compound between them: nested
 # compounds are exactly what VS Code sequenced unreliably.) "folderOpen" makes
 # VS Code run it automatically (first open may ask once to allow automatic
-# tasks / trust the folder).
+# tasks / trust the folder) — but only when VS Code is what serves the
+# workspace (vscode_runs_dev_tasks). When create serves it and opens terminals
+# instead, the tasks are still written, to run by hand ("Tasks: Run Task" →
+# "workspace up"), but never on open: opening the window later would start a
+# second `yarn serve-<app>` on a port the terminal already holds.
 # NOTE: built with printf, not a captured heredoc — macOS bash 3.2 mishandles
 # heredocs inside $(...) (same caveat as the nginx block in cmd_serve.sh).
 emit_workspace_tasks() {
-  local frontend_dir="$1" backend_dir="$2"
-  local app labels=""
+  local frontend_dir="$1" backend_dir="$2" run_on_open="$3"
+  local app labels="" run_options=""
+  if "$run_on_open"; then
+    run_options='        "runOptions": { "runOn": "folderOpen" },'
+  fi
   printf '%s\n' \
 '  "tasks": {' \
 '    "version": "2.0.0",' \
@@ -250,7 +265,7 @@ emit_workspace_tasks() {
 '      {' \
 '        "label": "workspace up",' \
 "        \"dependsOn\": [${labels}]," \
-'        "runOptions": { "runOn": "folderOpen" },' \
+${run_options:+"$run_options"} \
 '        "problemMatcher": []' \
 '      }' \
 '    ]' \
@@ -277,8 +292,12 @@ write_workspace_file() {
   # setting that lets the block run unprompted — pointless without it).
   local tasks_block="" allow_tasks=""
   if "$AUTO_SERVE"; then
-    tasks_block="$(emit_workspace_tasks "$frontend_dir" "$backend_dir")"$'\n'
-    allow_tasks=$'\n    "task.allowAutomaticTasks": "on",'
+    if vscode_runs_dev_tasks; then
+      tasks_block="$(emit_workspace_tasks "$frontend_dir" "$backend_dir" true)"$'\n'
+      allow_tasks=$'\n    "task.allowAutomaticTasks": "on",'
+    else
+      tasks_block="$(emit_workspace_tasks "$frontend_dir" "$backend_dir" false)"$'\n'
+    fi
   fi
   # Shared local packages etc. from the config, appended as extra workspace
   # folders (absolute paths — they live outside the session dir). Paths missing
@@ -526,7 +545,7 @@ cmd_create() {
       fi
       open_workspace "$workspace_file"
       auto_serve_if_needed
-      auto_open_terminals_if_needed "$frontend_worktree" "$backend_worktree" "${DEFAULT_APPS[@]}"
+      auto_open_terminals_if_needed "$frontend_worktree" "$backend_worktree" ${DEFAULT_APPS[@]+"${DEFAULT_APPS[@]}"}
       exit 0
     fi
     err "Both worktree paths exist, but at least one is not registered as git worktree. Refusing."
@@ -607,7 +626,7 @@ cmd_create() {
   # Checked last, once it has actually happened — not announced in advance.
   open_workspace "$workspace_file"
   auto_serve_if_needed
-  auto_open_terminals_if_needed "$frontend_worktree" "$backend_worktree" "${DEFAULT_APPS[@]}"
+  auto_open_terminals_if_needed "$frontend_worktree" "$backend_worktree" ${DEFAULT_APPS[@]+"${DEFAULT_APPS[@]}"}
 
   trap - EXIT
 }

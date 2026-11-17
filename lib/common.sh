@@ -694,12 +694,32 @@ TABS
   esac
 }
 
-# All-VS-Code workspaces start these from the .code-workspace tasks block;
-# running both would start every dev server twice on the same port.
+# True when VS Code starts the workspace's dev terminals: both IDEs are VS Code
+# AND `ws create` opens the window, whose .code-workspace tasks run `ws serve`
+# and `yarn serve-<app>` on folderOpen. Otherwise `ws create` serves and opens
+# the session terminals itself — that includes VS Code with
+# NO_OPEN_AFTER_CREATE=true: no window, so no tasks (work driven from T3 Code
+# or the Overview app, say).
+vscode_runs_dev_tasks() {
+  if [[ "$FRONTEND_IDE" != "vscode" || "$BACKEND_IDE" != "vscode" ]]; then
+    return 1
+  fi
+  if "$NO_OPEN_AFTER_CREATE"; then
+    return 1
+  fi
+  return 0
+}
+
+# When VS Code runs the dev tasks, opening terminals too would start every dev
+# server twice on the same port.
 auto_open_terminals_if_needed() {
   local wt_fe="$1" wt_be="$2"; shift 2
-  [[ "$TERMINAL_ENABLED" == "true" ]] || return 0
-  [[ "$FRONTEND_IDE" == "vscode" && "$BACKEND_IDE" == "vscode" ]] && return 0
+  if [[ "$TERMINAL_ENABLED" != "true" ]]; then
+    return 0
+  fi
+  if vscode_runs_dev_tasks; then
+    return 0
+  fi
   auto_open_terminals "$wt_fe" "$wt_be" "$@"
 }
 

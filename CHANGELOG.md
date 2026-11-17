@@ -36,6 +36,14 @@ when a release is tagged.
   arguments, never the directory: one object for a workspace, an array with
   `--all`.
 
+- `NO_OPEN_AFTER_CREATE=true` with VS Code no longer leaves a new workspace
+  unserved: the `.code-workspace` tasks that run `ws serve` and
+  `yarn serve-<app>` only fire in a window create opens, so without one
+  create now serves the workspace itself and opens the session terminals
+  (`TERMINAL_APP`: Terminal or Warp, with `yarn serve-<app>` and
+  `SESSION_TABS`) — the same path other IDEs take. The workspace file still
+  gets the tasks, to run by hand, but not on open: opening the window later
+  would start a second dev server on a port the terminal already holds.
 
 ### Fixed
 - `ws create` / `ws open` took a name with nothing usable after the task id

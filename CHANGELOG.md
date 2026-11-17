@@ -9,6 +9,13 @@ when a release is tagged.
 
 ## [Unreleased]
 
+### Fixed
+- `ws serve` ended silently with status 1, after all its work, when the
+  backend `.env` had no `IAM_PUBLIC_KEY_PATH` line: under pipefail the empty
+  grep stopped it before the documented default (`cognitor.key`) applied.
+  `ws create` now runs `ws serve` itself whenever no VS Code window opens, so
+  this hit every such create. (Same fix as in PR #23, which is still open.)
+
 ## [2.27.0] — 2026-11-17
 
 ### Added

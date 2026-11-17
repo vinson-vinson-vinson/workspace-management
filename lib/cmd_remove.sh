@@ -8,6 +8,10 @@
 
 # shellcheck source=/dev/null
 source "$LIB_DIR/envs.sh"
+# The app registry + port helpers (port_for), to find the workspace's dev
+# servers by their ports. Same reuse as cmd_status.
+# shellcheck source=/dev/null
+source "$LIB_DIR/cmd_serve.sh"
 
 cmd_remove_usage() {
   cat <<'USAGE'
@@ -115,6 +119,114 @@ revert_serve_setup() {
   fi
 }
 
+# Stop what the workspace still runs: its dev servers (a Warp/Terminal tab from
+# `ws create`, a VS Code task) and its horizon worker. A tab or task outlives
+# `ws remove`, so they kept running from a deleted directory, holding the
+# workspace's ports. A process qualifies only on BOTH counts — it listens on
+# one of this workspace's dev ports (or is an `artisan horizon`) AND runs from
+# inside its session dir — so an agent or a shell that merely sits in the
+# workspace is never touched, nor another workspace's server on a clashing
+# port. SIGTERM only; anything still alive after a few seconds is reported,
+# not killed harder.
+stop_workspace_processes() {
+  local slug="$1" session_dir="$2"
+  local -a candidates=() pids=()
+  local sub key port line pid="" addr cwd p seen
+
+  # Listeners on the workspace's dev ports: one lsof for every listener, then
+  # the ports matched in-shell.
+  local ports=$'\n'
+  if sub="$(resolve_subdomain "$slug" 2>/dev/null)"; then
+    PORT_BASE="$(compute_port_base "$sub")"
+    while IFS= read -r key; do
+      ports+="$(port_for "$key")"$'\n'
+    done < <(all_app_keys)
+  fi
+  while IFS= read -r line; do
+    case "$line" in
+      p*) pid="${line#p}" ;;
+      n*)
+        addr="${line#n}"
+        if [[ -n "$pid" && "$ports" == *$'\n'"${addr##*:}"$'\n'* ]]; then
+          candidates+=("$pid")
+        fi ;;
+    esac
+  done < <(lsof -nP -iTCP -sTCP:LISTEN -Fpn 2>/dev/null || true)
+  while IFS= read -r pid; do
+    if [[ -n "$pid" ]]; then
+      candidates+=("$pid")
+    fi
+  done < <(pgrep -f 'artisan horizon' 2>/dev/null || true)
+  if [[ ${#candidates[@]} -eq 0 ]]; then
+    return 0
+  fi
+
+  # Of those, the ones running from inside the session dir (deduplicated: a
+  # server may listen on several ports). Never this process itself.
+  local list
+  list="$(printf '%s,' "${candidates[@]}")"
+  list="${list%,}"
+  pid=""
+  while IFS= read -r line; do
+    case "$line" in
+      p*) pid="${line#p}" ;;
+      n*)
+        cwd="${line#n}"
+        case "$cwd" in
+          "$session_dir"|"$session_dir"/*) ;;
+          *) continue ;;
+        esac
+        if [[ -z "$pid" || "$pid" == "$$" ]]; then
+          continue
+        fi
+        seen=false
+        for p in ${pids[@]+"${pids[@]}"}; do
+          if [[ "$p" == "$pid" ]]; then
+            seen=true
+          fi
+        done
+        if ! "$seen"; then
+          pids+=("$pid")
+        fi ;;
+    esac
+  done < <(lsof -a -p "$list" -d cwd -Fpn 2>/dev/null || true)
+  if [[ ${#pids[@]} -eq 0 ]]; then
+    return 0
+  fi
+
+  local names
+  names="$(ps -o comm= -p "$(printf '%s,' "${pids[@]}" | sed 's/,$//')" 2>/dev/null \
+    | sed 's#.*/##' | sort -u | paste -sd, - | sed 's/,/, /g' || true)"
+  if "$DRY_RUN"; then
+    printf '[dry-run] kill -TERM %s  (%s)\n' "${pids[*]}" "$names"
+    return 0
+  fi
+
+  spin "stopping dev servers and workers"
+  kill -TERM "${pids[@]}" 2>/dev/null || true
+  local tries=0 alive=0
+  while (( tries < 10 )); do
+    alive=0
+    for p in "${pids[@]}"; do
+      if kill -0 "$p" 2>/dev/null; then
+        alive=$(( alive + 1 ))
+      fi
+    done
+    if (( alive == 0 )); then
+      break
+    fi
+    sleep 0.5
+    tries=$(( tries + 1 ))
+  done
+  if (( alive > 0 )); then
+    spin_stop
+    warn "$alive process(es) still running after SIGTERM (${names}) — stop them by hand."
+  else
+    spin_ok "stopped ${#pids[@]} process(es) running in the workspace (${names})"
+  fi
+  return 0
+}
+
 # SAFETY: never remove a workspace whose worktrees are on a protected base
 # ("main") branch. A task/plain workspace always sits on its own slug branch, so
 # this only ever fires when the tooling is pointed at a main/base checkout.
@@ -187,6 +299,7 @@ confirm_removal() {
     printf '  - Drop the workspace test database (%s), if any\n' \
       "$(resolve_test_db "$slug" 2>/dev/null || printf '?')"
   fi
+  printf '  - Stop its dev servers and horizon worker, if running\n'
   printf '  - Revert serve routing (remove nginx block + reload), if any\n'
   printf '  - Remove git worktrees (frontend + backend)\n'
   printf '  - Delete local branches\n'
@@ -421,6 +534,10 @@ cmd_remove() {
   cd "$WSM_HOME" 2>/dev/null || cd / || true
 
   vlog "Removing workspace..."
+
+  # First, while the ports and paths still identify them: a dev server left
+  # running would hold its port and serve a deleted directory.
+  stop_workspace_processes "$slug" "$session_dir"
 
   # Before routing: a launch config can exist without an nginx block, and
   # revert_serve_setup returns early in that case.

@@ -10,6 +10,13 @@ when a release is tagged.
 ## [Unreleased]
 
 ### Changed
+- `ws remove` stops what the workspace still runs before deleting it: its dev
+  servers and its horizon worker. A terminal tab or VS Code task outlives the
+  remove, so they kept serving a deleted directory and holding the
+  workspace's ports. Only a process that listens on one of the workspace's
+  dev ports (or is an `artisan horizon`) AND runs from inside its directory is
+  stopped, with SIGTERM — an agent or a shell sitting in the workspace is left
+  alone. `--dry-run` lists what it would stop.
 - `SESSION_TABS=()` now means no extra session tabs, just the
   `yarn serve-<app>` ones. Before, an empty list fell back to the default
   (a queue worker and two agents), so commenting every entry out brought them

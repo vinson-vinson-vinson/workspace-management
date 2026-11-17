@@ -23,8 +23,9 @@ ${C_BOLD}Commands${C_RESET}
   ${C_GREEN}remove${C_RESET} [slug] [options]   Tear a workspace down safely ${C_DIM}(defaults to cwd)${C_RESET}
   ${C_GREEN}serve${C_RESET} [slug] [options]    Serve a workspace at its subdomain ${C_DIM}(defaults to cwd)${C_RESET}
   ${C_GREEN}share${C_RESET} [slug]              Expose a workspace (or main) via ngrok ${C_DIM}(foreground; Ctrl-C to stop)${C_RESET}
+  ${C_GREEN}slug${C_RESET} <name> [--json]      The slug and branches create would use ${C_DIM}(local, no network)${C_RESET}
   ${C_GREEN}stats${C_RESET} [--json]           Usage stats + a scrollable timeline of your workspaces
-  ${C_GREEN}status${C_RESET} [slug]             Workspace health check ${C_DIM}(branches, git, serving, ports, deps)${C_RESET}
+  ${C_GREEN}status${C_RESET} [slug|--all]       Workspace health check ${C_DIM}(branches, git, serving, ports, deps; --json)${C_RESET}
   ${C_GREEN}sync${C_RESET}                     Refresh each window's Source Control repo list ${C_DIM}(auto on create/remove)${C_RESET}
   ${C_GREEN}test${C_RESET} [slug] [args]       Run the backend suite on the workspace's OWN test DB ${C_DIM}(defaults to cwd)${C_RESET}
   ${C_GREEN}trust${C_RESET} [--revoke]         Stop serve's sudo prompts for good ${C_DIM}(one-time sudoers rule)${C_RESET}

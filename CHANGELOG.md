@@ -9,6 +9,40 @@ when a release is tagged.
 
 ## [Unreleased]
 
+### Added
+- `ws slug <name> [--branch NAME] [--json]`: the slug and both branch names
+  `ws create` would use for the same arguments, the two branch prefixes, and
+  whether the workspace exists. It runs create's own normalisation, with no
+  network and no repository access, so a tool can preview a create while you
+  type (the Workspace Overview app does). It takes all of create's arguments
+  (a base branch, `--remote`, … are accepted and only checked for form).
+  Invalid input — argument errors included — exits non-zero, with
+  `{"error": …}` under `--json`.
+- `ws status --all --json`: the full report of every workspace as one JSON
+  array, the same object `ws status <slug> --json` prints. A workspace that
+  can't be reported (incomplete, or its collection failed) appears with an
+  `error` field instead of being dropped. Up to six workspaces are collected
+  at once, so 18 take about 3 s instead of about 20 s one by one. With `--mr`
+  each repo's open MRs are listed once (a glab call per 100 MRs) instead of
+  two calls per workspace.
+
+### Changed
+- `ws status` looks up the queue workers' folders with one `lsof` call
+  instead of one per running horizon process (about 0.1 s each), and the
+  `--all` table reads the listening ports once instead of once per app and
+  workspace. Same output, faster.
+- `ws status --json` outside a workspace, with no slug, is an error pointing
+  to `--all`, instead of printing the human table. The JSON shape follows the
+  arguments, never the directory: one object for a workspace, an array with
+  `--all`.
+
+
+### Fixed
+- `ws create` / `ws open` took a name with nothing usable after the task id
+  (`CU-1234_!!!`) or an empty task id (`CU-_feat`), printed an error, and then
+  created the workspace `CU-1234_` / `_feat` anyway. They now stop at the
+  error.
+
 ## [2.26.0] — 2026-11-16
 
 ### Added

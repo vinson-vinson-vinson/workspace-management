@@ -1032,9 +1032,14 @@ workspace_slug_for() {
     feature="${combined#*_}"
     [[ -n "$feature" ]] || { err "Missing feature name after '_' in '$combined'"; exit 1; }
   fi
-  name_slug="$(slugify_name "$feature")"
+  # A helper's `exit` only ends its own $(…) subshell. `|| exit 1` passes the
+  # failure on, so no caller is handed a half-built slug ("CU-1234_" from
+  # "CU-1234_!!!", "_feat" from "CU-_feat") to create a workspace under.
+  name_slug="$(slugify_name "$feature")" || exit 1
   if [[ -n "$task" ]]; then
-    printf '%s_%s' "$(normalize_task_id "$task")" "$name_slug"
+    local task_id
+    task_id="$(normalize_task_id "$task")" || exit 1
+    printf '%s_%s' "$task_id" "$name_slug"
   else
     printf '%s' "$name_slug"
   fi
@@ -1073,8 +1078,13 @@ workspace_slugs() {
 # A value that is a plain integer is written as a JSON number; anything else as
 # a string. Writing is best-effort: a failure to append must never break the
 # command that was logging.
-_hist_json_str() {
+# A JSON string body: control characters dropped (they would make the JSON
+# invalid, and names never carry them), backslash and quote escaped. Pure
+# bash, no fork, so it is cheap enough to call per field. Shared by the usage
+# history and `ws slug --json`.
+json_str() {
   local s="$1"
+  s="${s//[[:cntrl:]]/}"
   s="${s//\\/\\\\}"
   s="${s//\"/\\\"}"
   printf '%s' "$s"
@@ -1084,14 +1094,14 @@ _log_ws_event_at() {
   local ts="$1" event="${2:-}" slug="${3:-}"
   if [[ $# -ge 3 ]]; then shift 3; else shift $#; fi
   local line kv k v
-  line="{\"v\":1,\"ts\":$ts,\"event\":\"$(_hist_json_str "$event")\""
-  [[ -n "$slug" ]] && line+=",\"slug\":\"$(_hist_json_str "$slug")\""
+  line="{\"v\":1,\"ts\":$ts,\"event\":\"$(json_str "$event")\""
+  [[ -n "$slug" ]] && line+=",\"slug\":\"$(json_str "$slug")\""
   for kv in "$@"; do
     k="${kv%%=*}"; v="${kv#*=}"
     if [[ "$v" =~ ^-?[0-9]+$ ]]; then
-      line+=",\"$(_hist_json_str "$k")\":$v"
+      line+=",\"$(json_str "$k")\":$v"
     else
-      line+=",\"$(_hist_json_str "$k")\":\"$(_hist_json_str "$v")\""
+      line+=",\"$(json_str "$k")\":\"$(json_str "$v")\""
     fi
   done
   line+="}"

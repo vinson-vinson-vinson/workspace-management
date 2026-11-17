@@ -446,13 +446,19 @@ load_config() {
   # Commands auto-started in terminal tabs after ws create. $WT_FRONTEND and
   # $WT_BACKEND are substituted at runtime. Same +"" guard as above.
   POST_CREATE_TERMINALS=(${POST_CREATE_TERMINALS[@]+"${POST_CREATE_TERMINALS[@]}"})
-  # Tabs beyond the served apps: "NAME:frontend|backend:COMMAND".
-  SESSION_TABS=(${SESSION_TABS[@]+"${SESSION_TABS[@]}"})
-  [[ ${#SESSION_TABS[@]} -gt 0 ]] || SESSION_TABS=(
-    "queue:backend:php artisan horizon"
-    "agent (api):backend:claude"
-    "agent (ui):frontend:claude"
-  )
+  # Tabs beyond the served apps: "NAME:frontend|backend:COMMAND". The default
+  # applies only when the config doesn't set SESSION_TABS at all. An explicit
+  # SESSION_TABS=() — every entry commented out, say — means no extra tabs,
+  # not "bring the defaults back".
+  if declare -p SESSION_TABS >/dev/null 2>&1; then
+    SESSION_TABS=(${SESSION_TABS[@]+"${SESSION_TABS[@]}"})
+  else
+    SESSION_TABS=(
+      "queue:backend:php artisan horizon"
+      "agent (api):backend:claude"
+      "agent (ui):frontend:claude"
+    )
+  fi
 }
 
 # ------------------------------ session tabs --------------------------------

@@ -211,7 +211,9 @@ POST_CREATE_TERMINALS=(
 #
 # Optional; the default below is two agents (one per repo, since an agent
 # inherits the AGENTS.md and branch conventions of the directory it starts in)
-# plus a queue worker.
+# plus a queue worker. SESSION_TABS=() means no extra tabs — just the app
+# tabs; only leaving SESSION_TABS out of the config entirely gives this
+# default.
 SESSION_TABS=(
   "queue:backend:php artisan horizon"
   "agent (api):backend:claude"

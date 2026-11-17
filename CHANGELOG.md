@@ -9,6 +9,13 @@ when a release is tagged.
 
 ## [Unreleased]
 
+### Changed
+- `SESSION_TABS=()` now means no extra session tabs, just the
+  `yarn serve-<app>` ones. Before, an empty list fell back to the default
+  (a queue worker and two agents), so commenting every entry out brought them
+  all back. The default still applies when the config leaves `SESSION_TABS`
+  out entirely.
+
 ### Fixed
 - `ws serve` ended silently with status 1, after all its work, when the
   backend `.env` had no `IAM_PUBLIC_KEY_PATH` line: under pipefail the empty

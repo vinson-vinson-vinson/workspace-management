@@ -628,12 +628,53 @@ warp_tab_stem() {
   printf '%s--tab%s-%s' "$name" "$n" "${safe:-tab}"
 }
 
-# One of Warp's six tab colors, chosen by hashing NAME so a workspace's tabs
-# share a color and neighbouring workspaces usually don't.
+# The Warp tab color for tab-config NAME ("ws-<slug>"): the one nearest the
+# workspace's accent (titleBar.activeBackground — the color of its dot,
+# favicon ring and T3 icon). Warp takes only the eight ANSI color names (its
+# settings schema: AnsiColorIdentifier) and the theme decides the shade, so
+# this is the nearest hue, not the exact color. Without an accent (no
+# workspace file), a hash of NAME, so a workspace's tabs still share a color.
 warp_tab_color() {
+  local name="$1" hex sum
+  hex="$(_ws_color "${name#ws-}")"
+  if [[ -n "$hex" ]]; then
+    warp_color_for_hex "$hex"
+    return 0
+  fi
   local -a colors=(red green yellow blue magenta cyan)
-  local sum; sum="$(printf '%s' "$1" | cksum | cut -d' ' -f1)"
+  sum="$(printf '%s' "$name" | cksum | cut -d' ' -f1)"
   printf '%s' "${colors[$(( sum % 6 ))]}"
+}
+
+# The Warp tab color nearest #RRGGBB, by hue: red 0°, yellow 60°, green 120°,
+# cyan 180°, blue 240°, magenta 300°. A near-gray color (little chroma) maps to
+# white or black by its lightness. Pure bash arithmetic, no fork.
+warp_color_for_hex() {
+  local hex="${1#\#}" r g b max min d h
+  local -a hues=(red yellow green cyan blue magenta)
+  r=$(( 16#${hex:0:2} )); g=$(( 16#${hex:2:2} )); b=$(( 16#${hex:4:2} ))
+  max=$r; min=$r
+  if (( g > max )); then max=$g; fi
+  if (( b > max )); then max=$b; fi
+  if (( g < min )); then min=$g; fi
+  if (( b < min )); then min=$b; fi
+  d=$(( max - min ))
+  if (( d < 32 )); then
+    if (( max >= 128 )); then
+      printf 'white'
+    else
+      printf 'black'
+    fi
+    return 0
+  fi
+  if (( max == r )); then
+    h=$(( (60 * (g - b) / d + 360) % 360 ))
+  elif (( max == g )); then
+    h=$(( 60 * (b - r) / d + 120 ))
+  else
+    h=$(( 60 * (r - g) / d + 240 ))
+  fi
+  printf '%s' "${hues[$(( ((h + 30) % 360) / 60 ))]}"
 }
 
 # Remove the Warp configs `ws create` wrote for SLUG — the launch config

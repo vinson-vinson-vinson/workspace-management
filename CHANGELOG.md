@@ -10,6 +10,11 @@ when a release is tagged.
 ## [Unreleased]
 
 ### Changed
+- Warp tabs (`TERMINAL_APP=warp-tabs`) take the workspace's color: the one of
+  Warp's eight tab colors nearest its accent (the color of its dot, favicon
+  ring and T3 icon), instead of a color hashed from the name. Warp only
+  accepts those eight names and its theme sets the shade, so it is the
+  nearest hue, not the exact color.
 - `ws remove` stops what the workspace still runs before deleting it: its dev
   servers and its horizon worker. A terminal tab or VS Code task outlives the
   remove, so they kept serving a deleted directory and holding the

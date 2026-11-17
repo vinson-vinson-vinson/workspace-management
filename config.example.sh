@@ -171,7 +171,8 @@ EXTRA_WORKSPACE_FOLDERS=(
 #              command)
 #   warp-tabs  the tabs added to the Warp window you're already in, via one
 #              generated tab config each (~/.warp/tab_configs/ws-<slug>--tab*),
-#              colored per workspace and titled "<tab> · <slug>"
+#              colored after the workspace's accent (nearest of
+#              Warp's eight tab colors) and titled "<tab> · <slug>"
 #
 # Warp does have tab groups, but only as a UI gesture — neither a launch nor a
 # tab config can declare one yet (warpdotdev/warp#13898). With warp-tabs the
